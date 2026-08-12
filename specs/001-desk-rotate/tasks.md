@@ -238,3 +238,12 @@ Task: "src/DeskRotate/FloatingWindowForm.cs에 종료 확인 다이얼로그 구
 - [X] T035 `src/DeskRotate/FloatingWindowForm.cs`를 테두리 없는(`FormBorderStyle.None`) 창으로 재작성 — 기본 최소 보기(남은 시간 숫자만 큰 글씨로 표시)와 상세 보기(기존 라벨·목록) 두 상태를 두고, 창 본문에서 마우스 이동 거리로 클릭/드래그를 구분해 클릭 시 보기 전환·드래그 시 이동만 수행하도록 구현 (FR-004, FR-021, FR-023, FR-024, FR-025, contracts/floating-window-contract.md)
 - [X] T036 [P] `tests/DeskRotate.Tests/RotationSessionTests.cs`에 범위 기반 로직 테스트 추가/수정 — 범위 끝→시작 순환(예: 3~7에서 7 다음은 3), 절대 번호로 키잉된 `PerDesktopSwitchCounts`, 잘못된 범위(끝 < 시작) 생성자 검증
 - [X] T037 [P] 실제 Windows 환경에서 빌드·테스트 실행 후, 기본값(범위 1~3, 간격 5분)과 임의 범위(예: 3~5)로 앱을 실행해 초기 탐색·순회·최소/상세 보기 전환·테두리 없는 드래그가 의도대로 동작하는지 수동 확인 (quickstart.md 연계)
+
+---
+
+## Phase 10: 전환 검증 타이밍/화면 정지 결함 수정
+
+**Purpose**: 실사용 중 발견된 결함(범위 끝→시작 전환 시 키 입력 1회 초과 발생, 특정 창의 타이머가 0에 멈춰 보임) 수정. spec.md FR-016(확장)·FR-028(신규) 대응.
+
+- [X] T038 `src/DeskRotate/RotationEngine.cs`의 전환·검증·재시도 시퀀스를 `Thread.Sleep` 대신 `async`/`await Task.Delay` 기반으로 재작성 — 마지막 키 입력 이후 검증 전에도 지연을 두어 애니메이션 미완료로 인한 오판을 방지하고, 시퀀스 진행 중에도 매초 모든 창의 화면 갱신이 계속되도록 재진입 방지 플래그(`_switchInProgress`)를 추가 (FR-016, FR-017, FR-028)
+  - 2026-08-11 실제 Windows 11 머신에서 재검증: 범위 1~3, 간격 4초, 목표 6회(2바퀴)로 실행 — 6회 전환이 모두 끝난 뒤 상세 보기에서 데스크톱 1·2·3이 각각 정확히 2회씩으로 균등하게 표시됨(키 입력 과다/부족이 있었다면 이렇게 고르게 나오지 않았을 것). 크래시 없음, 프로세스 계속 응답. 총 예상 실행 시간(24초=4초×6)도 정확히 일치.

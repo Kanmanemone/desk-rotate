@@ -16,6 +16,12 @@ public sealed class RotationEngine
     private readonly Dictionary<int, FloatingWindowForm> _desktopWindows = new();
     private readonly System.Windows.Forms.Timer _timer;
 
+    /// <summary>
+    /// 전환 시퀀스(키 입력·검증·재시도)가 진행 중인 동안 true — 같은 시퀀스가 겹쳐 실행되는 것을
+    /// 막는다. 이 값이 true인 동안에도 매초 틱은 계속 돌며 화면을 갱신한다(더 이상 멈추지 않음).
+    /// </summary>
+    private bool _switchInProgress;
+
     /// <summary>사용자가 어느 플로팅 창에서든 종료를 확정했을 때 발생한다 (FR-009).</summary>
     public event Action? ExitRequested;
 
@@ -26,7 +32,7 @@ public sealed class RotationEngine
         _keyboard = keyboard;
 
         _timer = new System.Windows.Forms.Timer { Interval = 1000 };
-        _timer.Tick += (_, _) => OnTick();
+        _timer.Tick += async (_, _) => await OnTickAsync();
     }
 
     /// <summary>
@@ -93,26 +99,46 @@ public sealed class RotationEngine
         }
     }
 
-    private void OnTick()
+    private async Task OnTickAsync()
     {
         _session.Tick();
+        RefreshAllWindows();
 
+        // 전환 시퀀스가 이미 진행 중이면(재시도 등으로 300ms 이상 걸리는 중) 다시 겹쳐 시작하지
+        // 않는다 — 매초 화면 갱신 자체는 위에서 이미 계속 이루어지므로 창이 멈춰 보이지 않는다.
+        if (_switchInProgress || _session.TargetReached || _session.RemainingSecondsToNextSwitch > 0)
+        {
+            return;
+        }
+
+        _switchInProgress = true;
+        try
+        {
+            await AttemptSwitchAsync();
+        }
+        finally
+        {
+            _switchInProgress = false;
+        }
+
+        RefreshAllWindows();
+    }
+
+    private void RefreshAllWindows()
+    {
         foreach (FloatingWindowForm window in _desktopWindows.Values)
         {
             window.RefreshDisplay(_session);
-        }
-
-        if (!_session.TargetReached && _session.RemainingSecondsToNextSwitch <= 0)
-        {
-            AttemptSwitch();
         }
     }
 
     /// <summary>
     /// 범위 안 다음 데스크톱으로 전환을 시도한다 (FR-001, FR-002). 범위 끝에서 시작으로 되돌아가는
-    /// 경우에만 여러 번의 키 입력이 필요하며, 그 사이에 지연을 둔다 (FR-016).
+    /// 경우에만 여러 번의 키 입력이 필요하며, 그 사이와 검증 직전에 지연을 둔다 (FR-016). UI 스레드를
+    /// 막지 않도록 Thread.Sleep 대신 Task.Delay를 사용한다 — 블로킹 방식은 재시도가 걸리는 동안 다른
+    /// 창의 화면 갱신까지 멈춰 "타이머가 멈춘 것처럼 보이는" 문제를 일으켰다.
     /// </summary>
-    private void AttemptSwitch()
+    private async Task AttemptSwitchAsync()
     {
         int intendedTarget = _session.ComputeNextDesktopIndex();
         bool isWrap = _session.CurrentDesktopIndex == _session.RangeEnd
@@ -127,25 +153,27 @@ public sealed class RotationEngine
             for (int i = 0; i < stepsBack; i++)
             {
                 _keyboard.SendSwitchKeystroke(SwitchDirection.Previous);
-                if (i < stepsBack - 1)
-                {
-                    Thread.Sleep(InterKeystrokeDelayMilliseconds);
-                }
+                await Task.Delay(InterKeystrokeDelayMilliseconds);
             }
         }
         else
         {
             _keyboard.SendSwitchKeystroke(SwitchDirection.Next);
+            await Task.Delay(InterKeystrokeDelayMilliseconds);
         }
 
-        VerifyAndSettle(intendedTarget, direction);
+        // 마지막 키 입력 후 위에서 이미 지연을 두었으므로, 전환 애니메이션이 끝난 뒤에 검증한다.
+        // 지연 없이 바로 검증하면 애니메이션이 아직 끝나지 않아 "불일치"로 오판해 불필요한
+        // 재시도 키 입력을 추가로 보내는 버그가 있었다(예: 범위 1~3에서 3→1로 2번만 이동하면
+        // 되는데 검증 오판으로 3번째 키 입력이 나가던 문제).
+        await VerifyAndSettleAsync(intendedTarget, direction);
     }
 
     /// <summary>
     /// 전환 시도 직후 공식 API로 검증하고(FR-017), 어긋나면 재시도하며(FR-018),
     /// 재시도 한도를 소진하면 실제 위치로 자가 보정한다(FR-019).
     /// </summary>
-    private void VerifyAndSettle(int intendedTarget, SwitchDirection retryDirection)
+    private async Task VerifyAndSettleAsync(int intendedTarget, SwitchDirection retryDirection)
     {
         while (true)
         {
@@ -165,8 +193,8 @@ public sealed class RotationEngine
                 case RetryDecision.Retry:
                 default:
                     _session.RetryCount++;
-                    Thread.Sleep(InterKeystrokeDelayMilliseconds);
                     _keyboard.SendSwitchKeystroke(retryDirection);
+                    await Task.Delay(InterKeystrokeDelayMilliseconds);
                     break;
             }
         }
