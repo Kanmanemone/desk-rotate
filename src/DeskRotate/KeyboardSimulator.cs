@@ -21,6 +21,7 @@ public sealed class KeyboardSimulator
     private const ushort VkLWin = 0x5B;
     private const ushort VkLeft = 0x25;
     private const ushort VkRight = 0x27;
+    private const ushort VkD = 0x44;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MouseInput
@@ -88,6 +89,32 @@ public sealed class KeyboardSimulator
             KeyDown(VkLWin),
             KeyDown(arrowKey),
             KeyUp(arrowKey),
+            KeyUp(VkLWin),
+            KeyUp(VkControl),
+        };
+
+        int inputSize = Marshal.SizeOf<Input>();
+        uint sent = SendInput((uint)inputs.Length, inputs, inputSize);
+        if (sent != (uint)inputs.Length)
+        {
+            throw new InvalidOperationException(
+                $"SendInput sent {sent} of {inputs.Length} events (Win32 error {Marshal.GetLastWin32Error()}).");
+        }
+    }
+
+    /// <summary>
+    /// Win+Ctrl+D(Windows 표준 "새 데스크톱 추가" 단축키)를 한 번 눌렀다 뗀다 — 새 가상 데스크톱을
+    /// 만들고 그쪽으로 전환한다. 초기 탐색·설정 중 범위의 데스크톱이 아직 존재하지 않을 때만 쓰인다
+    /// (FR-033, 비공식 API 없이 표준 사용자 단축키만 사용).
+    /// </summary>
+    public void SendCreateDesktopKeystroke()
+    {
+        var inputs = new[]
+        {
+            KeyDown(VkControl),
+            KeyDown(VkLWin),
+            KeyDown(VkD),
+            KeyUp(VkD),
             KeyUp(VkLWin),
             KeyUp(VkControl),
         };

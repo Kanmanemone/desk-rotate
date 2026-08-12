@@ -247,3 +247,41 @@ Task: "src/DeskRotate/FloatingWindowForm.cs에 종료 확인 다이얼로그 구
 
 - [X] T038 `src/DeskRotate/RotationEngine.cs`의 전환·검증·재시도 시퀀스를 `Thread.Sleep` 대신 `async`/`await Task.Delay` 기반으로 재작성 — 마지막 키 입력 이후 검증 전에도 지연을 두어 애니메이션 미완료로 인한 오판을 방지하고, 시퀀스 진행 중에도 매초 모든 창의 화면 갱신이 계속되도록 재진입 방지 플래그(`_switchInProgress`)를 추가 (FR-016, FR-017, FR-028)
   - 2026-08-11 실제 Windows 11 머신에서 재검증: 범위 1~3, 간격 4초, 목표 6회(2바퀴)로 실행 — 6회 전환이 모두 끝난 뒤 상세 보기에서 데스크톱 1·2·3이 각각 정확히 2회씩으로 균등하게 표시됨(키 입력 과다/부족이 있었다면 이렇게 고르게 나오지 않았을 것). 크래시 없음, 프로세스 계속 응답. 총 예상 실행 시간(24초=4초×6)도 정확히 일치.
+
+---
+
+## Phase 11: 사이클 입력·닫기 버튼·표시 옵션·자석 스냅·존재하지 않는 데스크톱 자동 생성
+
+**Purpose**: 사용자가 직접 요청한 4가지(목표 사이클 수 입력, 상세 보기 커스텀 닫기 버튼, 초/사이클 표시 온오프 옵션, 테두리 자석 스냅)와, 이어서 사용자가 지적한 아키텍처 결함(입력한 범위의 데스크톱이 실제로 존재하지 않을 수 있다는 점) 수정을 구현. spec.md FR-013(개정), FR-029~033(신설) 대응.
+
+- [X] T039 [P] `src/DeskRotate/KeyboardSimulator.cs`에 Windows 표준 "새 데스크톱 추가" 단축키(Win+Ctrl+D) 입력을 보내는 `SendCreateDesktopKeystroke()`를 추가 (FR-033)
+- [X] T040 `src/DeskRotate/RotationSession.cs`의 생성자 파라미터를 `targetSwitchCount` 대신 `targetCycleCount`로 바꾸고, `TargetSwitchCount = TargetCycleCount * DesktopCount`로 환산해 기존 회전·통계 로직은 그대로 두며, `CurrentCycleNumber`(파생, `min(CompletedSwitchCount / DesktopCount + 1, TargetCycleCount)`)와 표시 옵션 `ShowSecondsUnit`/`ShowCycleNumber`(생성자로 입력받아 세션 동안 유지)를 추가 (FR-013, FR-030, FR-031, data-model.md)
+- [X] T041 `src/DeskRotate/RotationEngine.cs`의 `PerformInitialSetup()`(초기 탐색·초기 설정 단계)에서, 데스크톱 전환 키 입력을 보낸 직후마다 직전 위치를 나타내는 창(탐색 단계는 임시 probe 창, 설정 단계는 방금 만든 `FloatingWindowForm`)에 대해 `IsWindowOnCurrentVirtualDesktop`으로 실제 전환 여부를 확인하고, 전환되지 않았으면(그 데스크톱이 없으면) T039의 새 데스크톱 생성 키 입력을 보내 그 자리를 채우도록 구현 — 서로 다른 범위 번호의 창이 같은 실제 데스크톱 위에 겹쳐 생성되는 결함을 방지 (FR-033, Edge Cases)
+- [X] T042 [P] `src/DeskRotate/StartupInputForm.cs`의 "목표 총 전환 횟수" 입력을 "목표 사이클 수"(기본값 3)로 바꾸고, "초 단위 표시"(기본 켜짐)·"사이클 번호 표시"(기본 꺼짐) 체크박스 두 개를 추가하며, 총 예상 실행 시간 미리보기 계산을 사이클 수 × 데스크톱 개수 기준으로 갱신 (FR-013, FR-014, FR-026, FR-031, contracts/startup-input-contract.md)
+- [X] T043 [P] `src/DeskRotate/FloatingWindowForm.cs`의 상세 보기에 작은 커스텀 닫기(×) 버튼을 추가해 클릭 시 기존 `FormClosing`(FR-008) 확인 절차로 이어지도록 하고, 현재 사이클/목표 사이클 번호 표시를 추가하며, 최소 보기의 남은 시간 표시를 `ShowSecondsUnit`/`ShowCycleNumber`에 따라 조합하는 포맷 함수로 구현 (FR-029, FR-030, FR-031, contracts/floating-window-contract.md)
+- [X] T044 [P] `src/DeskRotate/FloatingWindowForm.cs`의 드래그 처리(`OnMouseMove`)에 화면 작업 영역 테두리 근접 시 자석처럼 달라붙는 스냅 로직을 추가 — 임계 거리를 작게 잡아 과도한 스냅을 피함 (FR-032)
+- [X] T045 [P] `tests/DeskRotate.Tests/RotationSessionTests.cs`에 목표 사이클 수 → 목표 총 전환 횟수 환산, `CurrentCycleNumber` 계산(사이클 경계·목표 도달 후 캡) 케이스를 추가 — 35개 전체 테스트 통과
+- [X] T046 실제 Windows 11 머신에서 빌드·테스트 실행 후 라이브 검증:
+  - 시작 폼: 목표 사이클 수 입력과 "초 단위 표시"/"사이클 번호 표시" 체크박스, 총 예상 실행 시간(간격×사이클×데스크톱수) 미리보기가 모두 정상 렌더링됨을 스크린샷으로 확인. 이 과정에서 실제로 발견·수정한 결함 2건: (1) 사이클 설명 라벨이 `AutoSize` 기본값(true) 때문에 폼 밖으로 잘려 보이던 문제 → 짧은 한 줄 문구로 교체, (2) 체크박스 예시 문구가 폭을 넘어 잘리던 문제 → 문구 단축.
+  - **범위 데스크톱이 실제로 존재하지 않는 경우(FR-033 핵심 시나리오)**: 범위 6~7·간격 5초·목표 1사이클로 제출 — 초기 탐색·설정 중 여러 새 가상 데스크톱이 자동 생성되며 화면이 전환되는 것을 확인, 크래시 없이 완료되고 플로팅 창이 정상적으로 나타나 카운트다운이 갱신됨. (참고: 이 테스트로 사용자 환경에 새 가상 데스크톱 몇 개가 남았을 수 있음 — 불필요하면 Task View에서 수동 삭제 가능)
+  - **최소 보기 표시 형식(FR-031)**: 범위 1~3·간격 4초·목표 2사이클, 두 옵션 모두 켠 상태로 "[1번째] 3초"가 잘리지 않고 완전히 표시됨을 확인. 이 과정에서 실제 발견한 결함: 사이클 번호 접두어로 텍스트가 길어지면 고정 크기(100×70) 최소 보기 창에서 글자가 잘리던 문제 → `RefreshDisplay`에서 `TextRenderer.MeasureText`로 실제 폭을 재서 창을 동적으로 넓히고 가로 중심을 유지하도록 수정.
+  - **상세 보기 커스텀 닫기 버튼(FR-029)**: 자식 컨트롤 enumeration으로 실제 닫기(×) 버튼(Win32 Button)을 찾아 `BM_CLICK`으로 클릭 → "정말 종료할까요?" 확인 다이얼로그가 뜨는 것을 확인(다이얼로그 hwnd 및 "예"/"아니요" 버튼 존재로 검증). "아니요" 클릭 시 다이얼로그만 닫히고 3개 창 모두 정상 유지됨을 재확인, 이후 다시 닫기 버튼 → "예" 클릭으로 프로세스가 깨끗하게 종료됨(tasklist로 확인)까지 end-to-end 검증 완료.
+  - **사이클 진행 표시(FR-030)**: 상세 보기에서 "사이클: 2 / 2"(목표 도달 후 캡핑됨)가 정확히 표시됨을 자식 컨트롤 텍스트로 확인.
+  - **미검증으로 남은 항목**: 테두리 자석 스냅(FR-032)은 코드 리뷰로만 확인했고 실제 드래그 동작으로는 검증하지 못함 — 외부 프로세스에서 좌표 기반 마우스 클릭/드래그 시뮬레이션이 이 머신의 DPI 가상화로 신뢰할 수 없어(스크린샷은 실물 픽셀, `GetWindowRect`/`SetCursorPos`는 호출자 DPI 인식 여부에 따라 다른 좌표계를 반환함을 실측으로 확인) 좌표 기반 드래그 테스트를 보류함. 필요하면 실제 마우스로 직접 확인 권장.
+
+---
+
+## Phase 12: Convergence
+
+- [X] T047 `specs/001-desk-rotate/quickstart.md`를 현재 spec.md와 일치하도록 갱신 per plan.md (partial): 시나리오 1의 "데스크톱 개수 3"·"목표 전환 횟수 6" 표현을 범위(예: 시작 1~끝 3)·목표 사이클 수 기준으로 고치고, 전제 조건에 "미리 데스크톱을 만들어 둘 필요가 이제는 없다(FR-033, 부족하면 자동 생성됨)"는 점을 반영하며, FR-029(상세 보기 커스텀 닫기 버튼)·FR-030(사이클 진행 표시)·FR-031(초 단위/사이클 번호 표시 옵션)·FR-032(테두리 자석 스냅)·FR-033(존재하지 않는 데스크톱 자동 생성)에 대한 수동 검증 시나리오를 추가
+
+---
+
+## Phase 13: 사이클 번호 표시 기본값 변경 및 절대 위치 판별 결함 수정
+
+**Purpose**: 사용자가 직접 요청한 "사이클 번호 표시" 기본값 변경과, 이미 여러 데스크톱이 떠 있는 상태에서 일부만 겹치는 범위를 입력하면 불필요하게 많은 데스크톱을 새로 생성하던 심각한 실사용 버그 수정. spec.md FR-031(개정)·FR-034(신설) 대응.
+
+- [X] T048 `src/DeskRotate/RotationEngine.cs`에 `SeekToActualFirstDesktop()`을 추가하고 `PerformInitialSetup()` 맨 앞에서 호출 — 뒤로(Previous) 계속 이동하며 매번 공식 API로 실제 이동 여부를 확인해, 더 이상 이동하지 않는 지점(=실제 데스크톱 1번)을 스스로 찾아낸 뒤에야 범위 시작까지의 이동 칸 수(FR-022)를 계산하도록 수정 — 실행 시점을 무조건 절대 1번으로 가정하던 기존 로직이 이미 다른 데스크톱들 사이에서 실행했을 때 불필요한 데스크톱을 대량 생성하던 근본 원인 (FR-034, contradicts)
+- [X] T049 `src/DeskRotate/StartupInputForm.cs`의 "사이클 번호 표시" 체크박스 기본값과 `src/DeskRotate/RotationSession.cs` 생성자의 `showCycleNumber` 기본 매개변수를 `false`에서 `true`로 변경 (FR-031, partial)
+- [X] T050 `tests/DeskRotate.Tests/RotationSessionTests.cs`의 `ShowSecondsUnitAndShowCycleNumber_DefaultToOnAndOff`를 새 기본값(둘 다 켜짐)에 맞게 갱신 — 35개 전체 테스트 통과
+- [X] T051 실제 Windows 11 머신에서 사용자가 보고한 정확한 재현 시나리오로 라이브 검증: (1단계) 범위 1~4로 실행해 실제 데스크톱 1~4를 확보한 뒤 목표 도달로 데스크톱 4번에 정지, (2단계) 그 상태에서 새 프로세스를 다시 실행해 범위 2~6 입력 — 결과: 데스크톱 2·3·4·5·6에 대해 정확히 5개의 창만 생성됨(기존 2·3·4번 재사용, 5·6번만 신규 생성)을 Win32 창 목록 조회로 확인. 수정 전 버그였다면 6·7·8·9번처럼 불필요하게 많이 생성됐을 것.

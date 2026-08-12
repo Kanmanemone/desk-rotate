@@ -14,15 +14,19 @@ spec.md의 Key Entities를 구현 가능한 형태로 구체화한다. 모든 �
 | `RangeEnd` | int | 순회 범위의 끝 데스크톱 번호(1-based, 포함) | `RangeEnd >= RangeStart` (FR-003, FR-027) |
 | `DesktopCount` | int | `RangeEnd - RangeStart + 1` (계산값) | 파생 필드, 순환 계산에만 내부적으로 사용 |
 | `IntervalSeconds` | int | 전환 간격(초 단위로 내부 저장, 입력은 UI 재량) | 1 이상의 정수 (FR-011), 기본값 300(5분) (FR-026) |
-| `TargetSwitchCount` | int | 목표 총 전환 횟수 | 1 이상의 정수 (FR-013) |
+| `TargetCycleCount` | int | 사용자가 입력한 목표 사이클 수 | 1 이상의 정수 (FR-013), 기본값 3 |
+| `TargetSwitchCount` | int | 목표 총 전환 횟수 — `TargetCycleCount * DesktopCount` (계산값) | 파생 필드, 기존 회전·통계 로직은 그대로 이 값을 사용 (FR-013) |
 | `TotalPlannedRuntimeSeconds` | int | `IntervalSeconds * TargetSwitchCount` (계산값) | 파생 필드, 저장 시 재계산 (FR-014) |
 | `CurrentDesktopIndex` | int | 검증으로 확인된 현재 데스크톱의 절대 번호 (`RangeStart`..`RangeEnd`) | 초기 설정(범위 시작까지 탐색, FR-022) 완료 시 `RangeStart`로 설정 |
 | `CompletedSwitchCount` | int | 검증까지 완료된 누적 전환 횟수 | 0에서 시작, `TargetSwitchCount` 도달 시 더 이상 증가하지 않음 |
+| `CurrentCycleNumber` | int | 현재 진행 중인 사이클 번호(1-based) — `min(CompletedSwitchCount / DesktopCount + 1, TargetCycleCount)` | 파생 필드 (FR-030) |
 | `TargetReached` | bool | `CompletedSwitchCount >= TargetSwitchCount` | 파생 필드 |
 | `RemainingSecondsToNextSwitch` | int | 다음 전환까지 남은 시간 | `TargetReached`면 의미 없음(표시 안 함) |
 | `RemainingSecondsToFinish` | int | 프로그램 종료까지 남은 전체 시간 | `TotalPlannedRuntimeSeconds`에서 경과 시간을 뺀 값(파생) |
 | `LastVerification` | `VerificationOutcome` | 가장 최근 전환 시도의 검증 결과 | 아래 값 객체 참고 |
 | `RetryCount` | int | 진행 중인 전환 시도의 재시도 횟수 | 0..RetryLimit(3), 성공하거나 한도 도달 시 0으로 리셋 |
+| `ShowSecondsUnit` | bool | 표시 옵션 — 최소 보기 숫자 뒤에 "초"를 붙일지 | 시작 입력 폼에서 설정, 기본값 켜짐 (FR-031) |
+| `ShowCycleNumber` | bool | 표시 옵션 — 최소 보기 앞에 "[N번째] "를 붙일지 | 시작 입력 폼에서 설정, 기본값 켜짐 (FR-031) |
 
 `CurrentDesktopIndex`와 `PerDesktopSwitchCounts`의 키는 모두 **절대 데스크톱 번호**(`RangeStart`..`RangeEnd`)를 사용한다 — 범위가 3~7이면 "데스크톱 3"처럼 사용자가 입력한 번호 그대로 표시되어야 하므로, 내부적으로 1부터 다시 세는 상대 인덱스를 쓰지 않는다.
 
@@ -59,13 +63,18 @@ FR-017(검증), FR-018(재시도), FR-019(자가 보정)의 판단 로직은 이
 
 **클릭 vs 드래그 구분**(FR-025): 마우스 버튼을 누른 시점의 좌표를 기억해 두고, 뗄 때까지의 최대 이동 거리가 임계값(구현 재량, 일반적인 OS 드래그 임계값 수준) 이하이면 클릭(→ `ViewMode` 토글)으로, 초과하면 드래그(→ `Position` 갱신, `ViewMode`는 그대로)로 처리한다.
 
+**테두리 자석 스냅**(FR-032): 드래그로 `Position`을 갱신할 때마다, 창의 현재 화면 대비 위치가 소속 화면(`Screen`)의 작업 영역 테두리(상/하/좌/우)에서 임계 거리(구현 재량, 작게 — "거의 닿을 수준") 이내이면 해당 축의 좌표를 테두리 값으로 고정(snap)한다. 임계 거리를 벗어나면 스냅 없이 커서를 그대로 따라간다.
+
+**상세 보기 닫기 버튼**(FR-029): `ViewMode = Detailed`일 때만 작은 커스텀 닫기(×) 컨트롤을 표시하며, 클릭 시 일반 닫기 시도와 동일한 `IsClosing` → 확인 다이얼로그 경로로 이어진다. 최소 보기에는 표시하지 않는다.
+
 **관계**: `RotationSession` 1 — N `PerDesktopFloatingWindow` (N = `DesktopCount`), 1 — N `PerDesktopSwitchCount` (N = `DesktopCount`). 각 `PerDesktopFloatingWindow`는 정확히 하나의 절대 데스크톱 번호에 대응하며, `RotationSession`의 파생 필드(남은 시간, 총 전환 횟수, 데스크톱별 카운트)를 동일하게 표시한다(창마다 내용은 같음, 위치와 `ViewMode`만 창별로 독립적).
 
 ## 생명주기 요약
 
-1. 앱 시작 → 사용자가 `RangeStart`, `RangeEnd`, `IntervalSeconds`, `TargetSwitchCount` 입력 (spec.md FR-003, FR-011, FR-013; 기본값은 FR-026).
-2. 초기 탐색(FR-022): 실행 시점의 현재 데스크톱에서 `RangeStart`까지 필요한 만큼 자동 이동.
-3. 초기 설정 과정(FR-020): 범위 안의 각 데스크톱을 자동 순회하며 `PerDesktopFloatingWindow` `DesktopCount`개 생성(모두 `ViewMode = Minimal`로 시작), `RangeStart`로 복귀.
-4. 반복: 간격 경과 → 전환 시도(범위 끝에서 시작으로 순환) → 검증 → (일치: 카운트 증가·`Idle` 복귀 / 불일치: 재시도 최대 3회 → 그래도 불일치면 자가 보정) → `TargetSwitchCount` 도달 시 `Completed`.
-5. 사용자가 아무 플로팅 창이나 클릭하면 그 창만 `ViewMode`가 토글된다(다른 창에는 영향 없음).
-6. 어느 창이든 닫기 시도 시 확인 다이얼로그 → 확정 시 전체 종료, 취소 시 `RotationSession`은 계속.
+1. 앱 시작 → 사용자가 `RangeStart`, `RangeEnd`, `IntervalSeconds`, `TargetCycleCount`, `ShowSecondsUnit`, `ShowCycleNumber` 입력 (spec.md FR-003, FR-011, FR-013, FR-031; 기본값은 FR-026). `TargetSwitchCount`는 `TargetCycleCount * DesktopCount`로 즉시 환산된다.
+2. 절대 위치 판별(FR-034): 실행 시점의 데스크톱이 전체 중 몇 번째인지 공식 API로 알 수 없으므로, 뒤로 계속 이동해 더 이상 이동하지 않는 지점(=실제 데스크톱 1번)을 스스로 찾아낸다. 이 기준 없이 실행 시점을 무조건 1번으로 가정하면 이미 다른 데스크톱들 사이에서 실행했을 때 이동 칸 수 계산이 틀어져 불필요한 데스크톱을 대량 생성하는 결함으로 이어진다(실사용 중 발견).
+3. 초기 탐색(FR-022): 실제 데스크톱 1번에서 `RangeStart`까지 필요한 만큼 자동 이동 — 매 이동 단계마다 공식 API로 실제 전환 여부를 확인하고, 전환되지 않았으면(그 데스크톱이 없으면) 새 데스크톱을 생성해 채운다(FR-033). 이미 존재하는 데스크톱은 재사용하고 부족한 만큼만 새로 만든다.
+4. 초기 설정 과정(FR-020): 범위 안의 각 데스크톱을 자동 순회하며 `PerDesktopFloatingWindow` `DesktopCount`개 생성(모두 `ViewMode = Minimal`로 시작), 이 단계도 3과 동일하게 매 이동마다 실제 전환을 확인하고 필요하면 새 데스크톱을 생성한다(FR-033). 완료 후 `RangeStart`로 복귀(이 구간은 이미 모든 데스크톱이 존재함을 보장하므로 생성 확인이 필요 없음).
+5. 반복: 간격 경과 → 전환 시도(범위 끝에서 시작으로 순환) → 검증 → (일치: 카운트 증가·`Idle` 복귀 / 불일치: 재시도 최대 3회 → 그래도 불일치면 자가 보정) → `TargetSwitchCount` 도달 시 `Completed`.
+6. 사용자가 아무 플로팅 창이나 클릭하면 그 창만 `ViewMode`가 토글된다(다른 창에는 영향 없음).
+7. 어느 창이든 닫기 시도 시 확인 다이얼로그 → 확정 시 전체 종료, 취소 시 `RotationSession`은 계속.

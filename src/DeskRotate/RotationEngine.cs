@@ -36,33 +36,119 @@ public sealed class RotationEngine
     }
 
     /// <summary>
-    /// 앱 시작 시 사용자 개입 없이, 실행 시점의 데스크톱을 절대 1번으로 가정하고 순회 범위의
-    /// 시작까지 자동으로 이동한 뒤(초기 탐색, FR-022), 범위 안 각 데스크톱을 한 번씩 순회하며
-    /// 플로팅 창을 생성·배치하고(FR-020), 범위 시작으로 복귀한다.
+    /// 앱 시작 시 사용자 개입 없이, 실행 시점의 데스크톱이 실제로 몇 번째인지 스스로 판별한 뒤
+    /// (FR-034) 순회 범위의 시작까지 자동으로 이동하고(초기 탐색, FR-022), 범위 안 각 데스크톱을
+    /// 한 번씩 순회하며 플로팅 창을 생성·배치하고(FR-020), 범위 시작으로 복귀한다.
+    /// 매 전환 단계마다 실제로 다른 데스크톱으로 이동했는지 공식 API로 확인하고, 그 데스크톱이
+    /// 아직 없어 이동하지 않았다면 새 데스크톱을 생성해 채운다(FR-033) — 그렇지 않으면 서로 다른
+    /// 범위 번호의 창들이 같은 실제 데스크톱 위에 겹쳐 생성되어 이후 전환 검증이 항상 "일치"로
+    /// 오판하는 결함으로 이어진다.
     /// </summary>
     public void PerformInitialSetup()
     {
+        SeekToActualFirstDesktop();
+
         int seekSteps = _session.RangeStart - 1;
-        for (int i = 0; i < seekSteps; i++)
+        if (seekSteps > 0)
         {
-            _keyboard.SendSwitchKeystroke(SwitchDirection.Next);
-            if (i < seekSteps - 1)
+            // 아직 범위 시작에 도달하기 전(=순회 대상이 아닌 데스크톱들을 지나가는 구간)이므로,
+            // 단계마다 "지금 어디에 있는지"를 나타내는 1회용 참조 창을 새로 만들어 다음 단계의
+            // 이동 여부 확인에 쓰고 바로 버린다.
+            Form reference = CreateDesktopProbe();
+            for (int i = 0; i < seekSteps; i++)
             {
-                Thread.Sleep(InterKeystrokeDelayMilliseconds);
+                EnsureAdvancedToNextDesktop(reference);
+                reference.Dispose();
+                reference = CreateDesktopProbe();
             }
+
+            reference.Dispose();
         }
 
         _desktopWindows[_session.RangeStart] = CreateWindowOnCurrentDesktop(_session.RangeStart);
 
         for (int desktopIndex = _session.RangeStart + 1; desktopIndex <= _session.RangeEnd; desktopIndex++)
         {
-            _keyboard.SendSwitchKeystroke(SwitchDirection.Next);
-            Thread.Sleep(InterKeystrokeDelayMilliseconds);
+            EnsureAdvancedToNextDesktop(_desktopWindows[desktopIndex - 1]);
             _desktopWindows[desktopIndex] = CreateWindowOnCurrentDesktop(desktopIndex);
         }
 
         ReturnToDesktop(_session.RangeStart);
         _session.CurrentDesktopIndex = _session.RangeStart;
+    }
+
+    /// <summary>
+    /// 공식 API는 "지금 몇 번째 데스크톱에 있는지" 알려주지 않으므로, 실행 시점을 무조건 절대
+    /// 1번으로 가정하면 이미 다른 데스크톱들 사이(예: 4개 중 2번째)에서 실행했을 때 범위 시작까지의
+    /// 이동 칸 수 계산이 틀어져 FR-033의 판단 기준 자체가 잘못되고, 그 결과 불필요한 데스크톱을
+    /// 대량으로 새로 만들어버리는 심각한 결함으로 이어진다(실사용 중 발견). 이를 막기 위해 뒤로
+    /// (Previous) 계속 이동을 시도하며 매번 실제 이동 여부를 확인하고, 더 이상 이동하지 않는
+    /// 지점(=실제 데스크톱 1번)에 도달할 때까지 반복한다(FR-034).
+    /// </summary>
+    private void SeekToActualFirstDesktop()
+    {
+        Form reference = CreateDesktopProbe();
+        while (true)
+        {
+            _keyboard.SendSwitchKeystroke(SwitchDirection.Previous);
+            Thread.Sleep(InterKeystrokeDelayMilliseconds);
+
+            bool moved = !_interop.IsWindowOnCurrentVirtualDesktop(reference.Handle);
+            reference.Dispose();
+
+            if (!moved)
+            {
+                break;
+            }
+
+            reference = CreateDesktopProbe();
+        }
+    }
+
+    /// <summary>
+    /// 다음 데스크톱으로 전환 키를 보내고, <paramref name="referenceOnCurrentDesktop"/>(전환 전
+    /// 위치를 나타내는 창)이 여전히 현재 데스크톱에 있는지로 실제 이동 여부를 확인한다. 이동하지
+    /// 않았다면(그 데스크톱이 아직 없다면) 표준 "새 데스크톱 추가" 단축키로 새 데스크톱을 만들어
+    /// 그쪽으로 전환한다(FR-033).
+    /// </summary>
+    private void EnsureAdvancedToNextDesktop(FloatingWindowForm referenceOnCurrentDesktop)
+        => EnsureAdvancedToNextDesktop(referenceOnCurrentDesktop.Handle);
+
+    private void EnsureAdvancedToNextDesktop(Form referenceOnCurrentDesktop)
+        => EnsureAdvancedToNextDesktop(referenceOnCurrentDesktop.Handle);
+
+    private void EnsureAdvancedToNextDesktop(IntPtr referenceHandleOnCurrentDesktop)
+    {
+        _keyboard.SendSwitchKeystroke(SwitchDirection.Next);
+        Thread.Sleep(InterKeystrokeDelayMilliseconds);
+
+        if (_interop.IsWindowOnCurrentVirtualDesktop(referenceHandleOnCurrentDesktop))
+        {
+            // 참조 창이 여전히 현재 데스크톱에 있다 — 전환이 일어나지 않았으므로 그 순번의
+            // 데스크톱이 아직 없다는 뜻이다. 새로 만들며 그쪽으로 전환한다.
+            _keyboard.SendCreateDesktopKeystroke();
+            Thread.Sleep(InterKeystrokeDelayMilliseconds);
+        }
+    }
+
+    /// <summary>
+    /// 절대 위치 판별(FR-034)과 초기 탐색 중(아직 범위 안 데스크톱이 아닌 구간)에만 쓰는, 화면에
+    /// 보이지 않는 1회용 참조 창 — 사용자에게 노출되는 실제 마커 창(FloatingWindowForm)과 달리
+    /// 검증 전용이며 쓰고 나면 곧바로 버려진다.
+    /// </summary>
+    private static Form CreateDesktopProbe()
+    {
+        var probe = new Form
+        {
+            FormBorderStyle = FormBorderStyle.None,
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(-32000, -32000),
+            Size = new Size(1, 1),
+            Opacity = 0,
+        };
+        probe.Show();
+        return probe;
     }
 
     /// <summary>초기 설정 이후 회전 타이머를 시작한다.</summary>

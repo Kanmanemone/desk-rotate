@@ -16,10 +16,24 @@ public sealed class RotationSession
     public int DesktopCount => RangeEnd - RangeStart + 1;
 
     public int IntervalSeconds { get; }
+
+    /// <summary>사용자가 입력한 목표 사이클 수 — 범위 안 데스크톱을 한 번씩 모두 순회하는 것이 1사이클 (FR-013).</summary>
+    public int TargetCycleCount { get; }
+
+    /// <summary>목표 총 전환 횟수 — TargetCycleCount * DesktopCount로 환산되며, 기존 회전·통계 로직은 이 값을 그대로 사용한다 (FR-013).</summary>
     public int TargetSwitchCount { get; }
 
     /// <summary>전환 간격 × 목표 총 전환 횟수 (FR-014).</summary>
     public int TotalPlannedRuntimeSeconds => IntervalSeconds * TargetSwitchCount;
+
+    /// <summary>최소 보기 숫자 뒤에 "초"를 붙일지 여부 (FR-031).</summary>
+    public bool ShowSecondsUnit { get; }
+
+    /// <summary>최소 보기 앞에 "[N번째] "를 붙일지 여부 (FR-031).</summary>
+    public bool ShowCycleNumber { get; }
+
+    /// <summary>현재 진행 중인 사이클 번호(1-based), 목표 사이클 수를 넘지 않도록 캡핑된다 (FR-030).</summary>
+    public int CurrentCycleNumber => Math.Min((CompletedSwitchCount / DesktopCount) + 1, TargetCycleCount);
 
     /// <summary>검증으로 확인된 현재 데스크톱의 절대 번호 (RangeStart..RangeEnd).</summary>
     public int CurrentDesktopIndex { get; set; }
@@ -47,7 +61,13 @@ public sealed class RotationSession
 
     private readonly Dictionary<int, int> _perDesktopSwitchCounts;
 
-    public RotationSession(int rangeStart, int rangeEnd, int intervalSeconds, int targetSwitchCount)
+    public RotationSession(
+        int rangeStart,
+        int rangeEnd,
+        int intervalSeconds,
+        int targetCycleCount,
+        bool showSecondsUnit = true,
+        bool showCycleNumber = true)
     {
         if (rangeStart < 1)
         {
@@ -64,15 +84,18 @@ public sealed class RotationSession
             throw new ArgumentOutOfRangeException(nameof(intervalSeconds), "1 이상이어야 합니다.");
         }
 
-        if (targetSwitchCount < 1)
+        if (targetCycleCount < 1)
         {
-            throw new ArgumentOutOfRangeException(nameof(targetSwitchCount), "1 이상이어야 합니다.");
+            throw new ArgumentOutOfRangeException(nameof(targetCycleCount), "1 이상이어야 합니다.");
         }
 
         RangeStart = rangeStart;
         RangeEnd = rangeEnd;
         IntervalSeconds = intervalSeconds;
-        TargetSwitchCount = targetSwitchCount;
+        TargetCycleCount = targetCycleCount;
+        TargetSwitchCount = targetCycleCount * DesktopCount;
+        ShowSecondsUnit = showSecondsUnit;
+        ShowCycleNumber = showCycleNumber;
 
         CurrentDesktopIndex = rangeStart;
         RemainingSecondsToNextSwitch = intervalSeconds;

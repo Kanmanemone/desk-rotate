@@ -16,8 +16,11 @@ public sealed class FloatingWindowForm : Form
 
     private const int ClickDragThresholdPixels = 5;
 
+    /// <summary>드래그 중 창이 화면 작업 영역 테두리에서 이 거리(px) 이내로 들어오면 달라붙는다 (FR-032).</summary>
+    private const int EdgeSnapThresholdPixels = 15;
+
     private static readonly Size MinimalSize = new(100, 70);
-    private static readonly Size DetailedSize = new(240, 240);
+    private static readonly Size DetailedSize = new(240, 260);
 
     private readonly int _desktopIndex;
     private ViewMode _viewMode = ViewMode.Minimal;
@@ -26,8 +29,10 @@ public sealed class FloatingWindowForm : Form
     private readonly Label _nextSwitchLabel;
     private readonly Label _remainingToFinishLabel;
     private readonly Label _totalPlannedRuntimeLabel;
+    private readonly Label _cycleProgressLabel;
     private readonly Label _countsHeaderLabel;
     private readonly ListBox _perDesktopCountsList;
+    private readonly Button _closeButton;
 
     private bool _mouseDown;
     private bool _dragged;
@@ -70,17 +75,23 @@ public sealed class FloatingWindowForm : Form
             Font = new Font(FontFamily.GenericSansSerif, 22F, FontStyle.Bold),
         };
 
-        _nextSwitchLabel = new Label { Left = 10, Top = 10, Width = 220, Height = 20 };
+        _nextSwitchLabel = new Label { Left = 10, Top = 10, Width = 190, Height = 20 };
         _remainingToFinishLabel = new Label { Left = 10, Top = 32, Width = 220, Height = 20 };
         _totalPlannedRuntimeLabel = new Label { Left = 10, Top = 54, Width = 220, Height = 20 };
-        _countsHeaderLabel = new Label { Left = 10, Top = 78, Width = 220, Height = 18, Text = "데스크톱별 전환 횟수:" };
-        _perDesktopCountsList = new ListBox { Left = 10, Top = 98, Width = 220, Height = 130 };
+        _cycleProgressLabel = new Label { Left = 10, Top = 76, Width = 220, Height = 20 };
+        _countsHeaderLabel = new Label { Left = 10, Top = 98, Width = 220, Height = 18, Text = "데스크톱별 전환 횟수:" };
+        _perDesktopCountsList = new ListBox { Left = 10, Top = 118, Width = 220, Height = 130 };
+
+        // 상세 보기 전용 커스텀 닫기 버튼 (FR-029) — 테두리 없는 창이라 기본 X 버튼이 없어,
+        // 클릭하면 다른 닫기 경로와 동일하게 OnFormClosing의 종료 확인 절차로 이어진다.
+        _closeButton = new Button { Left = 204, Top = 6, Width = 26, Height = 22, Text = "×" };
+        _closeButton.Click += (_, _) => Close();
 
         Controls.Add(_minimalCountdownLabel);
         Controls.AddRange(new Control[]
         {
-            _nextSwitchLabel, _remainingToFinishLabel, _totalPlannedRuntimeLabel,
-            _countsHeaderLabel, _perDesktopCountsList,
+            _nextSwitchLabel, _remainingToFinishLabel, _totalPlannedRuntimeLabel, _cycleProgressLabel,
+            _countsHeaderLabel, _perDesktopCountsList, _closeButton,
         });
 
         // 창 본문(최소 보기 숫자, 상세 보기 라벨들, 폼 배경) 어디를 눌러도 클릭/드래그를 인식한다.
@@ -89,6 +100,7 @@ public sealed class FloatingWindowForm : Form
         WireDragAndClickHandlers(_nextSwitchLabel);
         WireDragAndClickHandlers(_remainingToFinishLabel);
         WireDragAndClickHandlers(_totalPlannedRuntimeLabel);
+        WireDragAndClickHandlers(_cycleProgressLabel);
         WireDragAndClickHandlers(_countsHeaderLabel);
 
         ApplyViewMode();
@@ -135,8 +147,40 @@ public sealed class FloatingWindowForm : Form
 
         if (_dragged)
         {
-            Location = new Point(_dragStartWindowLocation.X + dx, _dragStartWindowLocation.Y + dy);
+            Location = SnapToEdgesIfNear(new Point(_dragStartWindowLocation.X + dx, _dragStartWindowLocation.Y + dy));
         }
+    }
+
+    /// <summary>
+    /// 창이 소속 화면의 작업 영역 테두리에서 <see cref="EdgeSnapThresholdPixels"/> 이내로 들어오면
+    /// 해당 축을 테두리에 맞춰 고정한다(FR-032). 벗어나면 그대로 자유롭게 이동한다 — 과도한 스냅을
+    /// 피하기 위해 임계 거리를 "거의 닿을 수준"으로 작게 잡는다.
+    /// </summary>
+    private Point SnapToEdgesIfNear(Point candidate)
+    {
+        Rectangle workingArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+        int x = candidate.X;
+        int y = candidate.Y;
+
+        if (Math.Abs(x - workingArea.Left) <= EdgeSnapThresholdPixels)
+        {
+            x = workingArea.Left;
+        }
+        else if (Math.Abs((x + Width) - workingArea.Right) <= EdgeSnapThresholdPixels)
+        {
+            x = workingArea.Right - Width;
+        }
+
+        if (Math.Abs(y - workingArea.Top) <= EdgeSnapThresholdPixels)
+        {
+            y = workingArea.Top;
+        }
+        else if (Math.Abs((y + Height) - workingArea.Bottom) <= EdgeSnapThresholdPixels)
+        {
+            y = workingArea.Bottom - Height;
+        }
+
+        return new Point(x, y);
     }
 
     private void OnMouseUp(object? sender, MouseEventArgs e)
@@ -170,10 +214,30 @@ public sealed class FloatingWindowForm : Form
         _nextSwitchLabel.Visible = detailed;
         _remainingToFinishLabel.Visible = detailed;
         _totalPlannedRuntimeLabel.Visible = detailed;
+        _cycleProgressLabel.Visible = detailed;
         _countsHeaderLabel.Visible = detailed;
         _perDesktopCountsList.Visible = detailed;
+        _closeButton.Visible = detailed;
 
         ClientSize = detailed ? DetailedSize : MinimalSize;
+    }
+
+    /// <summary>
+    /// 최소 보기 텍스트가 사이클 번호 접두어(FR-031)로 길어질 수 있어, 고정 크기로는 큰 글씨가
+    /// 잘려 보이는 문제가 실제 실행 화면에서 발견됐다. 실제 텍스트 폭을 측정해 필요한 만큼만
+    /// 창을 넓히고(최소 크기는 MinimalSize 유지), 가로 중심은 유지한 채 좌우로 균등하게 늘린다.
+    /// </summary>
+    private void ResizeMinimalWindowToFitText()
+    {
+        Size measured = TextRenderer.MeasureText(_minimalCountdownLabel.Text, _minimalCountdownLabel.Font);
+        int desiredWidth = Math.Max(MinimalSize.Width, measured.Width + 24);
+
+        if (ClientSize.Width != desiredWidth || ClientSize.Height != MinimalSize.Height)
+        {
+            int centerX = Location.X + ClientSize.Width / 2;
+            ClientSize = new Size(desiredWidth, MinimalSize.Height);
+            Location = new Point(centerX - ClientSize.Width / 2, Location.Y);
+        }
     }
 
     /// <summary>초기 배치: 화면 상단 중앙(12시 방향) (FR-021). 이후 사용자가 드래그하면 세션 동안 그 위치가 유지된다.</summary>
@@ -185,12 +249,15 @@ public sealed class FloatingWindowForm : Form
         Location = new Point(x, y);
     }
 
-    /// <summary>매초 RotationEngine의 타이머 틱에서 호출되어 표시 내용을 최신 상태로 갱신한다 (FR-005, FR-006, FR-014, FR-023).</summary>
+    /// <summary>매초 RotationEngine의 타이머 틱에서 호출되어 표시 내용을 최신 상태로 갱신한다 (FR-005, FR-006, FR-014, FR-023, FR-030, FR-031).</summary>
     public void RefreshDisplay(RotationSession session)
     {
-        _minimalCountdownLabel.Text = session.TargetReached
-            ? "완료"
-            : session.RemainingSecondsToNextSwitch.ToString();
+        _minimalCountdownLabel.Text = FormatMinimalText(session);
+
+        if (_viewMode == ViewMode.Minimal)
+        {
+            ResizeMinimalWindowToFitText();
+        }
 
         _nextSwitchLabel.Text = session.TargetReached
             ? "전환 완료 — 최종 통계"
@@ -201,6 +268,7 @@ public sealed class FloatingWindowForm : Form
             : $"종료까지 남은 시간: {session.RemainingSecondsToFinish}초";
 
         _totalPlannedRuntimeLabel.Text = $"총 예상 실행 시간: {session.TotalPlannedRuntimeSeconds}초";
+        _cycleProgressLabel.Text = $"사이클: {session.CurrentCycleNumber} / {session.TargetCycleCount}";
 
         int topIndex = _perDesktopCountsList.TopIndex;
         _perDesktopCountsList.BeginUpdate();
@@ -215,6 +283,22 @@ public sealed class FloatingWindowForm : Form
         {
             _perDesktopCountsList.TopIndex = topIndex;
         }
+    }
+
+    /// <summary>
+    /// 최소 보기 숫자를 표시 옵션에 따라 조합한다 (FR-031) — 사이클 번호 표시가 켜지면 앞에
+    /// "[N번째] "를, 초 단위 표시가 켜지면 뒤에 "초"를 붙인다(예: "[2번째] 137초").
+    /// </summary>
+    private static string FormatMinimalText(RotationSession session)
+    {
+        if (session.TargetReached)
+        {
+            return "완료";
+        }
+
+        string number = session.RemainingSecondsToNextSwitch.ToString();
+        string withUnit = session.ShowSecondsUnit ? number + "초" : number;
+        return session.ShowCycleNumber ? $"[{session.CurrentCycleNumber}번째] {withUnit}" : withUnit;
     }
 
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
