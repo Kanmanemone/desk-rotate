@@ -137,7 +137,8 @@ plan.md의 Project Structure를 따른다 — 단일 프로젝트: `src/DeskRota
 
 - [ ] T028 [P] quickstart.md의 7개 검증 시나리오를 처음부터 끝까지 수동으로 실행하고 결과 기록
   - 2026-08-11 실제 Windows 11 머신(.NET 8 SDK 설치)에서 부분 실행함: 시나리오 1(시작 입력·초기 설정), 2(실제 자동 전환 — 가상 데스크톱이 실제로 바뀌는 것을 확인), 3(남은 시간·총 예상 실행 시간·데스크톱별 횟수 표시), 5(종료 확인 다이얼로그의 취소/확정 양쪽 경로, 다이얼로그가 떠 있는 동안 타이머 유지)는 확인 완료. 이 과정에서 실제 크래시 버그(SendInput 구조체 크기 오류)와 UI 버그(DPI 스케일링으로 시작 버튼이 안 보이던 문제)를 발견해 수정함 — 커밋 05b7d3c 참고.
-  - 미확인 상태로 남은 것: 시나리오 4(목표 도달 후 "완료" 문구 표시를 화면으로 직접 확인은 못 함, 다만 크래시 없이 계속 응답함은 확인), 6(검증 실패→재시도 유발), 7(플로팅 창 초기 위치가 정확히 상단 중앙인지 픽셀 단위 확인), 8(장시간 실행 안정성) — 추가 확인이 필요하면 이어서 진행 가능.
+  - 미확인 상태로 남은 것: 6(검증 실패→재시도 유발), 8(장시간 실행 안정성) — 추가 확인이 필요하면 이어서 진행 가능.
+  - 2026-08-11 (Phase 9 구현 후 재검증): 범위 입력(1~2)·간격 5초·목표 3회로 재실행해 시나리오 2(범위 안에서 순환 전환, 데스크톱 1↔2)·4(목표 도달 시 "완료" 최소 보기 문구 및 "전환 완료 — 최종 통계" 상세 보기 문구, 정확한 카운트 데스크톱 1: 1회/데스크톱 2: 2회)·7(테두리 없는 최소 보기가 상단 중앙에 정확히 배치됨, 클릭으로 상세 보기 전환)까지 화면으로 직접 확인. 드래그 이동 자체(마우스 누른 채 이동)는 자동화 도구로는 검증하지 않음 — 클릭 판정(이동 없음)만 확인.
 - [X] T029 [P] `src/DeskRotate/VirtualDesktopInterop.cs`와 `src/DeskRotate/KeyboardSimulator.cs`에 "공식 API만 사용" 제약을 명시하는 XML 문서 주석 추가 (향후 유지보수자를 위한 가드레일)
 - [X] T030 spec.md Clarifications에서 확정한 제약(비공식 COM 인터페이스 금지, `SetForegroundWindow` 등 강제 포커스 트릭 금지)이 코드 어디에도 위반되지 않았는지 최종 점검
 
@@ -224,3 +225,16 @@ Task: "src/DeskRotate/FloatingWindowForm.cs에 종료 확인 다이얼로그 구
 ## Phase 8: Convergence
 
 - [X] T031 `src/DeskRotate/DeskRotate.csproj`에 `<SupportedOSPlatformVersion>` 속성을 추가해 plan.md Technical Context가 명시한 최소 지원 버전(Windows 10 1903+)을 프로젝트 설정에 반영 per plan.md: Target Platform (partial)
+
+---
+
+## Phase 9: 데스크톱 범위 입력 및 최소/상세 보기 플로팅 창
+
+**Purpose**: 사용자가 직접 요청한 3가지 요구사항(데스크톱 범위 입력, 시작 폼 기본값, 테두리 없는 최소/상세 보기 플로팅 창) 구현. spec.md FR-002·003·004·014·020~027, data-model.md, contracts/ 갱신분에 대응.
+
+- [X] T032 [P] `src/DeskRotate/RotationSession.cs`를 `TotalDesktopCount` 대신 `RangeStart`/`RangeEnd`/파생 `DesktopCount`로 재작성 — `ComputeNextDesktopIndex()`가 절대 데스크톱 번호 기준으로 범위 끝→시작 순환하도록, `PerDesktopSwitchCounts`가 절대 번호로 키잉되도록, 생성자가 `RangeEnd >= RangeStart >= 1`을 검증하도록 변경 (FR-002, FR-003, FR-027, data-model.md)
+- [X] T033 `src/DeskRotate/RotationEngine.cs`의 `PerformInitialSetup()`에 초기 탐색 단계 추가 — 실행 시점 현재 데스크톱에서 `RangeStart`까지 먼저 이동한 뒤 기존 범위 순회·창 생성 로직 수행, `AttemptSwitch()`의 wrap 판정을 `RangeEnd`→`RangeStart` 기준으로 변경 (FR-020, FR-022)
+- [X] T034 [P] `src/DeskRotate/StartupInputForm.cs`를 데스크톱 개수 입력 대신 순회 시작/끝 번호 입력으로 변경 — 기본값 시작 1/끝 3/간격 300초로 설정, 끝 < 시작 시 시작 거부 (FR-003, FR-026, FR-027, contracts/startup-input-contract.md)
+- [X] T035 `src/DeskRotate/FloatingWindowForm.cs`를 테두리 없는(`FormBorderStyle.None`) 창으로 재작성 — 기본 최소 보기(남은 시간 숫자만 큰 글씨로 표시)와 상세 보기(기존 라벨·목록) 두 상태를 두고, 창 본문에서 마우스 이동 거리로 클릭/드래그를 구분해 클릭 시 보기 전환·드래그 시 이동만 수행하도록 구현 (FR-004, FR-021, FR-023, FR-024, FR-025, contracts/floating-window-contract.md)
+- [X] T036 [P] `tests/DeskRotate.Tests/RotationSessionTests.cs`에 범위 기반 로직 테스트 추가/수정 — 범위 끝→시작 순환(예: 3~7에서 7 다음은 3), 절대 번호로 키잉된 `PerDesktopSwitchCounts`, 잘못된 범위(끝 < 시작) 생성자 검증
+- [X] T037 [P] 실제 Windows 환경에서 빌드·테스트 실행 후, 기본값(범위 1~3, 간격 5분)과 임의 범위(예: 3~5)로 앱을 실행해 초기 탐색·순회·최소/상세 보기 전환·테두리 없는 드래그가 의도대로 동작하는지 수동 확인 (quickstart.md 연계)

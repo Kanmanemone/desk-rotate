@@ -2,7 +2,8 @@ namespace DeskRotate;
 
 /// <summary>
 /// 타이머 기반으로 전환 시도·검증·재시도·자가 보정을 오케스트레이션한다.
-/// 초기 설정(FR-020)으로 데스크톱별 플로팅 창을 만들고, 그 창들을 검증 앵커이자 표시 UI로 함께 사용한다.
+/// 초기 탐색(FR-022)과 초기 설정(FR-020)으로 순회 범위 안 데스크톱별 플로팅 창을 만들고,
+/// 그 창들을 검증 앵커이자 표시 UI로 함께 사용한다.
 /// </summary>
 public sealed class RotationEngine
 {
@@ -29,22 +30,33 @@ public sealed class RotationEngine
     }
 
     /// <summary>
-    /// 앱 시작 시 사용자 개입 없이 각 데스크톱을 한 번씩 순회하며 플로팅 창을 생성·배치하고,
-    /// 원래 있던 데스크톱으로 복귀한다 (FR-020).
+    /// 앱 시작 시 사용자 개입 없이, 실행 시점의 데스크톱을 절대 1번으로 가정하고 순회 범위의
+    /// 시작까지 자동으로 이동한 뒤(초기 탐색, FR-022), 범위 안 각 데스크톱을 한 번씩 순회하며
+    /// 플로팅 창을 생성·배치하고(FR-020), 범위 시작으로 복귀한다.
     /// </summary>
     public void PerformInitialSetup()
     {
-        _desktopWindows[1] = CreateWindowOnCurrentDesktop(1);
+        int seekSteps = _session.RangeStart - 1;
+        for (int i = 0; i < seekSteps; i++)
+        {
+            _keyboard.SendSwitchKeystroke(SwitchDirection.Next);
+            if (i < seekSteps - 1)
+            {
+                Thread.Sleep(InterKeystrokeDelayMilliseconds);
+            }
+        }
 
-        for (int desktopIndex = 2; desktopIndex <= _session.TotalDesktopCount; desktopIndex++)
+        _desktopWindows[_session.RangeStart] = CreateWindowOnCurrentDesktop(_session.RangeStart);
+
+        for (int desktopIndex = _session.RangeStart + 1; desktopIndex <= _session.RangeEnd; desktopIndex++)
         {
             _keyboard.SendSwitchKeystroke(SwitchDirection.Next);
             Thread.Sleep(InterKeystrokeDelayMilliseconds);
             _desktopWindows[desktopIndex] = CreateWindowOnCurrentDesktop(desktopIndex);
         }
 
-        ReturnToDesktop(1);
-        _session.CurrentDesktopIndex = 1;
+        ReturnToDesktop(_session.RangeStart);
+        _session.CurrentDesktopIndex = _session.RangeStart;
     }
 
     /// <summary>초기 설정 이후 회전 타이머를 시작한다.</summary>
@@ -67,9 +79,10 @@ public sealed class RotationEngine
         return window;
     }
 
+    /// <summary>현재 데스크톱(호출 시점엔 항상 RangeEnd)에서 targetIndex까지 되돌아간다.</summary>
     private void ReturnToDesktop(int targetIndex)
     {
-        int stepsBack = _session.TotalDesktopCount - targetIndex;
+        int stepsBack = _session.RangeEnd - targetIndex;
         for (int i = 0; i < stepsBack; i++)
         {
             _keyboard.SendSwitchKeystroke(SwitchDirection.Previous);
@@ -96,21 +109,21 @@ public sealed class RotationEngine
     }
 
     /// <summary>
-    /// 다음 데스크톱으로 전환을 시도한다 (FR-001, FR-002). 마지막→처음으로 되돌아가는 경우에만
-    /// 여러 번의 키 입력이 필요하며, 그 사이에 지연을 둔다 (FR-016).
+    /// 범위 안 다음 데스크톱으로 전환을 시도한다 (FR-001, FR-002). 범위 끝에서 시작으로 되돌아가는
+    /// 경우에만 여러 번의 키 입력이 필요하며, 그 사이에 지연을 둔다 (FR-016).
     /// </summary>
     private void AttemptSwitch()
     {
         int intendedTarget = _session.ComputeNextDesktopIndex();
-        bool isWrap = _session.CurrentDesktopIndex == _session.TotalDesktopCount
-            && intendedTarget == 1
-            && _session.TotalDesktopCount > 1;
+        bool isWrap = _session.CurrentDesktopIndex == _session.RangeEnd
+            && intendedTarget == _session.RangeStart
+            && _session.DesktopCount > 1;
 
         SwitchDirection direction = isWrap ? SwitchDirection.Previous : SwitchDirection.Next;
 
         if (isWrap)
         {
-            int stepsBack = _session.TotalDesktopCount - 1;
+            int stepsBack = _session.DesktopCount - 1;
             for (int i = 0; i < stepsBack; i++)
             {
                 _keyboard.SendSwitchKeystroke(SwitchDirection.Previous);
