@@ -10,6 +10,18 @@ public sealed class RotationEngine
     /// <summary>연속 키 입력 사이 지연(ms) — 전환 애니메이션 완료 대기 및 재시도 간격 (research.md §5, FR-016).</summary>
     private const int InterKeystrokeDelayMilliseconds = 300;
 
+    /// <summary>
+    /// 실행 시점 데스크톱이 실제로 몇 번째인지 공식 API로 알 수 없어(FR-034), 뒤로(Previous)
+    /// 이 횟수만큼 무조건 이동시켜 실제 데스크톱 1번에 도달한다. 참조 창을 만들어 "이동했는지"를
+    /// 조회로 판정하려는 시도는 실사용 환경에서 신뢰할 수 없는 것으로 확인됐다(때로는 실제 이동이
+    /// 있었는데도 계속 "이동 안 함"으로, 때로는 반대로 계속 "이동함"으로 오판해 엉뚱한 데스크톱까지
+    /// 점프하는 결함으로 이어졌다). 반면 Ctrl+Win+Left는 이미 첫 번째 데스크톱에 있을 때 눌러도
+    /// 완전히 안전한 no-op이라는 것은 Windows 표준 동작으로 보장되므로, 판정에 의존하지 않고
+    /// 실제 있을 법한 데스크톱 개수보다 넉넉한 횟수만큼 무조건 이동을 시도하는 쪽이 더 신뢰할 수
+    /// 있다 — 이미 1번에 도달한 뒤의 나머지 시도는 그냥 아무 일도 일어나지 않는다.
+    /// </summary>
+    private const int GuaranteedSeekToFirstAttempts = 40;
+
     private readonly RotationSession _session;
     private readonly VirtualDesktopInterop _interop;
     private readonly KeyboardSimulator _keyboard;
@@ -36,41 +48,41 @@ public sealed class RotationEngine
     }
 
     /// <summary>
-    /// 앱 시작 시 사용자 개입 없이, 실행 시점의 데스크톱이 실제로 몇 번째인지 스스로 판별한 뒤
-    /// (FR-034) 순회 범위의 시작까지 자동으로 이동하고(초기 탐색, FR-022), 범위 안 각 데스크톱을
-    /// 한 번씩 순회하며 플로팅 창을 생성·배치하고(FR-020), 범위 시작으로 복귀한다.
-    /// 매 전환 단계마다 실제로 다른 데스크톱으로 이동했는지 공식 API로 확인하고, 그 데스크톱이
-    /// 아직 없어 이동하지 않았다면 새 데스크톱을 생성해 채운다(FR-033) — 그렇지 않으면 서로 다른
-    /// 범위 번호의 창들이 같은 실제 데스크톱 위에 겹쳐 생성되어 이후 전환 검증이 항상 "일치"로
-    /// 오판하는 결함으로 이어진다.
+    /// 앱 시작 시 사용자 개입 없이, 실제 데스크톱 1번까지 무조건 이동한 뒤(FR-034), 1번부터
+    /// 순회 범위 끝까지 순서대로 방문하며 데스크톱별 플로팅 창을 만든다(FR-020) — 이동 여부
+    /// 판정에는 매번 새로 만드는 1회용 참조 창 대신, 이미 신뢰성이 검증된 플로팅 창 자체를
+    /// 쓴다(실사용 중 발견: 1회용 참조 창은 만들자마자 조회하면 결과가 신뢰할 수 없었다). 범위
+    /// 시작보다 앞선 구간(순회 대상이 아닌 데스크톱)에서 만든 임시 창은 마지막에 정리하고,
+    /// 범위 시작으로 복귀한다.
     /// </summary>
     public void PerformInitialSetup()
     {
-        SeekToActualFirstDesktop();
+        SeekToActualFirstDesktopBlindly();
 
-        int seekSteps = _session.RangeStart - 1;
-        if (seekSteps > 0)
+        var visitedInOrder = new Dictionary<int, FloatingWindowForm>();
+
+        FloatingWindowForm previous = CreateWindowOnCurrentDesktop(1);
+        visitedInOrder[1] = previous;
+
+        for (int desktopIndex = 2; desktopIndex <= _session.RangeEnd; desktopIndex++)
         {
-            // 아직 범위 시작에 도달하기 전(=순회 대상이 아닌 데스크톱들을 지나가는 구간)이므로,
-            // 단계마다 "지금 어디에 있는지"를 나타내는 1회용 참조 창을 새로 만들어 다음 단계의
-            // 이동 여부 확인에 쓰고 바로 버린다.
-            Form reference = CreateDesktopProbe();
-            for (int i = 0; i < seekSteps; i++)
-            {
-                EnsureAdvancedToNextDesktop(reference);
-                reference.Dispose();
-                reference = CreateDesktopProbe();
-            }
-
-            reference.Dispose();
+            EnsureAdvancedToNextDesktop(previous);
+            FloatingWindowForm current = CreateWindowOnCurrentDesktop(desktopIndex);
+            visitedInOrder[desktopIndex] = current;
+            previous = current;
         }
 
-        _desktopWindows[_session.RangeStart] = CreateWindowOnCurrentDesktop(_session.RangeStart);
-
-        for (int desktopIndex = _session.RangeStart + 1; desktopIndex <= _session.RangeEnd; desktopIndex++)
+        foreach ((int desktopIndex, FloatingWindowForm window) in visitedInOrder)
         {
-            EnsureAdvancedToNextDesktop(_desktopWindows[desktopIndex - 1]);
-            _desktopWindows[desktopIndex] = CreateWindowOnCurrentDesktop(desktopIndex);
+            if (desktopIndex >= _session.RangeStart)
+            {
+                _desktopWindows[desktopIndex] = window;
+            }
+            else
+            {
+                // 범위 시작 이전(순회 대상 아님)은 지나가는 길에만 필요했던 임시 창이므로 정리한다.
+                window.Dispose();
+            }
         }
 
         ReturnToDesktop(_session.RangeStart);
@@ -78,30 +90,15 @@ public sealed class RotationEngine
     }
 
     /// <summary>
-    /// 공식 API는 "지금 몇 번째 데스크톱에 있는지" 알려주지 않으므로, 실행 시점을 무조건 절대
-    /// 1번으로 가정하면 이미 다른 데스크톱들 사이(예: 4개 중 2번째)에서 실행했을 때 범위 시작까지의
-    /// 이동 칸 수 계산이 틀어져 FR-033의 판단 기준 자체가 잘못되고, 그 결과 불필요한 데스크톱을
-    /// 대량으로 새로 만들어버리는 심각한 결함으로 이어진다(실사용 중 발견). 이를 막기 위해 뒤로
-    /// (Previous) 계속 이동을 시도하며 매번 실제 이동 여부를 확인하고, 더 이상 이동하지 않는
-    /// 지점(=실제 데스크톱 1번)에 도달할 때까지 반복한다(FR-034).
+    /// 뒤로(Previous) 이동을 정해진 횟수만큼 무조건 시도해 실제 데스크톱 1번에 도달한다.
+    /// 자세한 이유는 <see cref="GuaranteedSeekToFirstAttempts"/> 참고.
     /// </summary>
-    private void SeekToActualFirstDesktop()
+    private void SeekToActualFirstDesktopBlindly()
     {
-        Form reference = CreateDesktopProbe();
-        while (true)
+        for (int i = 0; i < GuaranteedSeekToFirstAttempts; i++)
         {
             _keyboard.SendSwitchKeystroke(SwitchDirection.Previous);
-            Thread.Sleep(InterKeystrokeDelayMilliseconds);
-
-            bool moved = !_interop.IsWindowOnCurrentVirtualDesktop(reference.Handle);
-            reference.Dispose();
-
-            if (!moved)
-            {
-                break;
-            }
-
-            reference = CreateDesktopProbe();
+            PumpMessagesFor(InterKeystrokeDelayMilliseconds);
         }
     }
 
@@ -112,43 +109,66 @@ public sealed class RotationEngine
     /// 그쪽으로 전환한다(FR-033).
     /// </summary>
     private void EnsureAdvancedToNextDesktop(FloatingWindowForm referenceOnCurrentDesktop)
-        => EnsureAdvancedToNextDesktop(referenceOnCurrentDesktop.Handle);
-
-    private void EnsureAdvancedToNextDesktop(Form referenceOnCurrentDesktop)
-        => EnsureAdvancedToNextDesktop(referenceOnCurrentDesktop.Handle);
-
-    private void EnsureAdvancedToNextDesktop(IntPtr referenceHandleOnCurrentDesktop)
     {
         _keyboard.SendSwitchKeystroke(SwitchDirection.Next);
-        Thread.Sleep(InterKeystrokeDelayMilliseconds);
 
-        if (_interop.IsWindowOnCurrentVirtualDesktop(referenceHandleOnCurrentDesktop))
+        // 첫 번째 폴링 구간(최대 2초) 동안 이동이 감지되지 않아도 곧바로 "그 데스크톱이 없다"고
+        // 단정하지 않고, 새 키 입력 없이 한 번 더 폴링해 재확인한다(추가 키 입력이 없으므로 실제로
+        // 이동한 상태에서 다시 확인해도 더 지나쳐버릴 위험이 없다). 둘 다 이동 없음으로 나와야만
+        // 최종적으로 없다고 판단한다.
+        IntPtr referenceHandle = referenceOnCurrentDesktop.Handle;
+        if (!WaitForMovementAway(referenceHandle) && !WaitForMovementAway(referenceHandle))
         {
-            // 참조 창이 여전히 현재 데스크톱에 있다 — 전환이 일어나지 않았으므로 그 순번의
-            // 데스크톱이 아직 없다는 뜻이다. 새로 만들며 그쪽으로 전환한다.
+            // 넉넉히 두 번 확인해도 참조 창이 계속 현재 데스크톱에 있다 — 전환이 일어나지 않았으므로
+            // 그 순번의 데스크톱이 아직 없다는 뜻이다. 새로 만들며 그쪽으로 전환한다.
+            //
+            // 주의: Win+Ctrl+D는 지금 위치가 어디든 항상 전체 데스크톱 목록의 "맨 끝"에 새
+            // 데스크톱을 추가한다 — "바로 다음 자리"에 끼워 넣지 않는다. 그래서 이동 여부 판정을
+            // 오판하면(예: 실제로는 이동했는데 아직 안 했다고 잘못 판단) 옆 데스크톱이 아니라 이미
+            // 존재하던 다른 데스크톱들 끝(예: 19번)까지 엉뚱하게 새로 만들며 튀어버리는 결함으로
+            // 이어진다 — 오판 하나가 곧바로 큰 점프가 되므로 이동 감지 자체를 신뢰할 수 있어야 한다.
             _keyboard.SendCreateDesktopKeystroke();
-            Thread.Sleep(InterKeystrokeDelayMilliseconds);
+            PumpMessagesFor(InterKeystrokeDelayMilliseconds);
         }
     }
 
     /// <summary>
-    /// 절대 위치 판별(FR-034)과 초기 탐색 중(아직 범위 안 데스크톱이 아닌 구간)에만 쓰는, 화면에
-    /// 보이지 않는 1회용 참조 창 — 사용자에게 노출되는 실제 마커 창(FloatingWindowForm)과 달리
-    /// 검증 전용이며 쓰고 나면 곧바로 버려진다.
+    /// 전환 키 입력 직후 <paramref name="referenceHandle"/>가 현재 데스크톱에서 벗어났는지(=이동
+    /// 했는지) 넉넉한 시간 동안 짧은 간격으로 반복 조회한다.
     /// </summary>
-    private static Form CreateDesktopProbe()
+    private bool WaitForMovementAway(IntPtr referenceHandle)
     {
-        var probe = new Form
+        const int timeoutMilliseconds = 2000;
+        const int pollIntervalMilliseconds = 100;
+
+        int elapsed = 0;
+        while (elapsed < timeoutMilliseconds)
         {
-            FormBorderStyle = FormBorderStyle.None,
-            ShowInTaskbar = false,
-            StartPosition = FormStartPosition.Manual,
-            Location = new Point(-32000, -32000),
-            Size = new Size(1, 1),
-            Opacity = 0,
-        };
-        probe.Show();
-        return probe;
+            PumpMessagesFor(pollIntervalMilliseconds);
+            elapsed += pollIntervalMilliseconds;
+
+            if (!_interop.IsWindowOnCurrentVirtualDesktop(referenceHandle))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// <paramref name="milliseconds"/> 동안 Windows 메시지를 계속 처리하며 대기한다. `Thread.Sleep`
+    /// 대신 이렇게 메시지를 직접 퍼 올려야, 이 시점(아직 `Application.Run()`의 메인 메시지 루프가
+    /// 시작되기 전)에 만든 창도 정상적으로 처리된다.
+    /// </summary>
+    private static void PumpMessagesFor(int milliseconds)
+    {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        while (stopwatch.ElapsedMilliseconds < milliseconds)
+        {
+            Application.DoEvents();
+            Thread.Sleep(10);
+        }
     }
 
     /// <summary>초기 설정 이후 회전 타이머를 시작한다.</summary>
@@ -180,7 +200,7 @@ public sealed class RotationEngine
             _keyboard.SendSwitchKeystroke(SwitchDirection.Previous);
             if (i < stepsBack - 1)
             {
-                Thread.Sleep(InterKeystrokeDelayMilliseconds);
+                PumpMessagesFor(InterKeystrokeDelayMilliseconds);
             }
         }
     }
