@@ -1,0 +1,24 @@
+# .NET build output
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+packages/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.iml
+
+# Test results
+[Tt]est[Rr]esult*/
+*.trx
+
+# OS files
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp

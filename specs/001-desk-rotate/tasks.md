@@ -29,9 +29,9 @@ plan.md의 Project Structure를 따른다 — 단일 프로젝트: `src/DeskRota
 
 **Purpose**: 프로젝트 초기화 및 기본 구조 생성
 
-- [ ] T001 `src/DeskRotate/DeskRotate.csproj` (net8.0-windows, WinForms)과 `tests/DeskRotate.Tests/DeskRotate.Tests.csproj` (xUnit)를 plan.md의 Project Structure에 맞춰 생성
-- [ ] T002 [P] `DeskRotate.sln`을 생성하고 두 프로젝트를 등록, `tests/DeskRotate.Tests`에서 `src/DeskRotate`로 프로젝트 참조 추가
-- [ ] T003 [P] `.gitignore`에 .NET 빌드 산출물(`bin/`, `obj/`) 제외 규칙 추가
+- [X] T001 `src/DeskRotate/DeskRotate.csproj` (net8.0-windows, WinForms)과 `tests/DeskRotate.Tests/DeskRotate.Tests.csproj` (xUnit)를 plan.md의 Project Structure에 맞춰 생성
+- [X] T002 [P] `DeskRotate.sln`을 생성하고 두 프로젝트를 등록, `tests/DeskRotate.Tests`에서 `src/DeskRotate`로 프로젝트 참조 추가
+- [X] T003 [P] `.gitignore`에 .NET 빌드 산출물(`bin/`, `obj/`) 제외 규칙 추가
 
 ---
 
@@ -41,12 +41,12 @@ plan.md의 Project Structure를 따른다 — 단일 프로젝트: `src/DeskRota
 
 **⚠️ CRITICAL**: 이 단계가 끝나기 전에는 어떤 유저 스토리도 시작할 수 없다.
 
-- [ ] T004 공식 `IVirtualDesktopManager` 인터페이스(`IsWindowOnCurrentVirtualDesktop`, `MoveWindowToDesktop`, `GetWindowDesktopId`)만 감싸는 P/Invoke·COM interop 래퍼를 `src/DeskRotate/VirtualDesktopInterop.cs`에 구현 (비공식 인터페이스는 절대 참조하지 않음, research.md §1)
-- [ ] T005 [P] `SendInput` 기반 `Ctrl+Win+Left/Right` 키 입력 시뮬레이터를 `src/DeskRotate/KeyboardSimulator.cs`에 구현 (research.md §2)
-- [ ] T006 [P] data-model.md의 `RotationSession` 필드와 파생 필드(`TotalPlannedRuntimeSeconds`, `TargetReached`, `RemainingSecondsToFinish` 등) 계산 로직을 `src/DeskRotate/RotationSession.cs`에 구현
-- [ ] T007 [P] data-model.md의 `VerificationOutcome` 값 객체(`IntendedDesktopIndex`, `ActualDesktopIndex`, `Matched`)를 `src/DeskRotate/VerificationOutcome.cs`에 구현
-- [ ] T008 contracts/startup-input-contract.md에 따라 데스크톱 개수·전환 간격·목표 전환 횟수 입력과 검증(1 이상 정수)을 처리하는 `src/DeskRotate/StartupInputForm.cs` 구현
-- [ ] T009 `src/DeskRotate/Program.cs` 진입점 구현 — `StartupInputForm`을 띄우고 유효한 입력이 제출되면 `RotationSession`을 생성
+- [X] T004 공식 `IVirtualDesktopManager` 인터페이스(`IsWindowOnCurrentVirtualDesktop`, `MoveWindowToDesktop`, `GetWindowDesktopId`)만 감싸는 P/Invoke·COM interop 래퍼를 `src/DeskRotate/VirtualDesktopInterop.cs`에 구현 (비공식 인터페이스는 절대 참조하지 않음, research.md §1)
+- [X] T005 [P] `SendInput` 기반 `Ctrl+Win+Left/Right` 키 입력 시뮬레이터를 `src/DeskRotate/KeyboardSimulator.cs`에 구현 (research.md §2)
+- [X] T006 [P] data-model.md의 `RotationSession` 필드와 파생 필드(`TotalPlannedRuntimeSeconds`, `TargetReached`, `RemainingSecondsToFinish` 등) 계산 로직을 `src/DeskRotate/RotationSession.cs`에 구현
+- [X] T007 [P] data-model.md의 `VerificationOutcome` 값 객체(`IntendedDesktopIndex`, `ActualDesktopIndex`, `Matched`)를 `src/DeskRotate/VerificationOutcome.cs`에 구현
+- [X] T008 contracts/startup-input-contract.md에 따라 데스크톱 개수·전환 간격·목표 전환 횟수 입력과 검증(1 이상 정수)을 처리하는 `src/DeskRotate/StartupInputForm.cs` 구현
+- [X] T009 `src/DeskRotate/Program.cs` 진입점 구현 — `StartupInputForm`을 띄우고 유효한 입력이 제출되면 `RotationSession`을 생성
 
 **Checkpoint**: 앱이 실행되어 입력을 검증하고 `RotationSession`을 만들 수 있다 — 아직 회전이나 창은 없음.
 
@@ -60,15 +60,15 @@ plan.md의 Project Structure를 따른다 — 단일 프로젝트: `src/DeskRota
 
 ### Tests for User Story 1
 
-- [ ] T010 [P] [US1] `tests/DeskRotate.Tests/RotationSessionTests.cs`에 회전 순서(균일 순환, 마지막→처음 wrap) 및 목표 전환 횟수 도달 판정에 대한 단위 테스트 작성
+- [X] T010 [P] [US1] `tests/DeskRotate.Tests/RotationSessionTests.cs`에 회전 순서(균일 순환, 마지막→처음 wrap) 및 목표 전환 횟수 도달 판정에 대한 단위 테스트 작성
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] `src/DeskRotate/FloatingWindowForm.cs`에 최소 창 셸(always-on-top, HWND 노출) 구현 — 위치·표시 내용은 이후 스토리에서 확장
-- [ ] T012 [US1] `src/DeskRotate/RotationEngine.cs`에 초기 설정 과정 구현 — `KeyboardSimulator`로 각 데스크톱을 한 번씩 순회하며 `VirtualDesktopInterop.MoveWindowToDesktop`으로 데스크톱별 `FloatingWindowForm`을 생성·배치하고, 원래 데스크톱으로 복귀 (FR-020)
-- [ ] T013 [US1] `src/DeskRotate/RotationEngine.cs`에 타이머 기반 회전 루프 구현 — `IntervalSeconds`마다 다음 데스크톱으로 키 입력 전송, 마지막→처음 순환 시에만 연속 키 입력 사이에 지연 적용 (FR-001, FR-002, FR-016)
-- [ ] T014 [US1] `src/DeskRotate/RotationEngine.cs`에 목표 도달 시 정지 로직 구현 — `TargetReached`가 되면 더 이상 전환을 시도하지 않고 창은 열어 둠 (FR-015)
-- [ ] T015 [US1] `src/DeskRotate/Program.cs`에서 `StartupInputForm` 제출 후 `RotationEngine`의 초기 설정과 회전 루프를 시작하도록 연결
+- [X] T011 [US1] `src/DeskRotate/FloatingWindowForm.cs`에 최소 창 셸(always-on-top, HWND 노출) 구현 — 위치·표시 내용은 이후 스토리에서 확장
+- [X] T012 [US1] `src/DeskRotate/RotationEngine.cs`에 초기 설정 과정 구현 — `KeyboardSimulator`로 각 데스크톱을 한 번씩 순회하며, 새 창은 생성 시점에 활성 데스크톱에 자동 배속되는 OS 동작을 이용해 데스크톱별 `FloatingWindowForm`을 그 자리에서 생성하고, 원래 데스크톱으로 복귀 (FR-020). `VirtualDesktopInterop.MoveWindowToDesktop`/`GetWindowDesktopId`는 공식 인터페이스 전체를 감싸는 용도로 `VirtualDesktopInterop`에 함께 구현해 두었으나 이 경로에서는 쓰이지 않음
+- [X] T013 [US1] `src/DeskRotate/RotationEngine.cs`에 타이머 기반 회전 루프 구현 — `IntervalSeconds`마다 다음 데스크톱으로 키 입력 전송, 마지막→처음 순환 시에만 연속 키 입력 사이에 지연 적용 (FR-001, FR-002, FR-016)
+- [X] T014 [US1] `src/DeskRotate/RotationEngine.cs`에 목표 도달 시 정지 로직 구현 — `TargetReached`가 되면 더 이상 전환을 시도하지 않고 창은 열어 둠 (FR-015)
+- [X] T015 [US1] `src/DeskRotate/Program.cs`에서 `StartupInputForm` 제출 후 `RotationEngine`의 초기 설정과 회전 루프를 시작하도록 연결
 
 **Checkpoint**: MVP 완성 — 앱이 자동으로 창을 배치하고, 간격마다 균일하게 순환 전환하며, 목표 횟수에서 멈춘다.
 
@@ -82,15 +82,15 @@ plan.md의 Project Structure를 따른다 — 단일 프로젝트: `src/DeskRota
 
 ### Tests for User Story 2
 
-- [ ] T016 [P] [US2] `tests/DeskRotate.Tests/VerificationOutcomeTests.cs`에 Matched/Mismatched 판정과 재시도 한도 소진 시 자가 보정 트리거 로직에 대한 단위 테스트 작성
+- [X] T016 [P] [US2] `tests/DeskRotate.Tests/VerificationOutcomeTests.cs`에 Matched/Mismatched 판정과 재시도 한도 소진 시 자가 보정 트리거 로직에 대한 단위 테스트 작성
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] `src/DeskRotate/RotationEngine.cs`에 전환 직후 검증 단계 구현 — 의도한 목표 데스크톱의 `FloatingWindowForm`에 대해 `VirtualDesktopInterop.IsWindowOnCurrentVirtualDesktop`을 조회해 `VerificationOutcome` 생성 (FR-017)
-- [ ] T018 [US2] `src/DeskRotate/RotationEngine.cs`에 재시도 로직 구현 — Mismatched 시 최대 3회까지 300ms 간격으로 키 입력 재전송 (research.md §5, FR-018)
-- [ ] T019 [US2] `src/DeskRotate/RotationEngine.cs`에 자가 보정 로직 구현 — 재시도 한도 소진 시 검증된 실제 데스크톱을 새 `CurrentDesktopIndex`로 채택하고 관련 상태를 보정, 무한 재시도 금지 (FR-019)
-- [ ] T020 [P] [US2] `src/DeskRotate/FloatingWindowForm.cs`에 종료 확인 다이얼로그 구현 — `FormClosing`을 가로채 contracts/floating-window-contract.md의 "정말 종료할까요?" 확인을 띄우고, 취소 시 창과 엔진은 계속 동작 (FR-008, FR-010)
-- [ ] T021 [US2] `src/DeskRotate/FloatingWindowForm.cs`와 `src/DeskRotate/Program.cs`에 종료 확정 시 전체 종료 로직 구현 — 어느 창에서든 확정하면 모든 데스크톱 창과 `RotationEngine`이 함께 종료 (FR-009)
+- [X] T017 [US2] `src/DeskRotate/RotationEngine.cs`에 전환 직후 검증 단계 구현 — 의도한 목표 데스크톱의 `FloatingWindowForm`에 대해 `VirtualDesktopInterop.IsWindowOnCurrentVirtualDesktop`을 조회해 `VerificationOutcome` 생성 (FR-017)
+- [X] T018 [US2] `src/DeskRotate/RotationEngine.cs`에 재시도 로직 구현 — Mismatched 시 최대 3회까지 300ms 간격으로 키 입력 재전송 (research.md §5, FR-018)
+- [X] T019 [US2] `src/DeskRotate/RotationEngine.cs`에 자가 보정 로직 구현 — 재시도 한도 소진 시 검증된 실제 데스크톱을 새 `CurrentDesktopIndex`로 채택하고 관련 상태를 보정, 무한 재시도 금지 (FR-019)
+- [X] T020 [P] [US2] `src/DeskRotate/FloatingWindowForm.cs`에 종료 확인 다이얼로그 구현 — `FormClosing`을 가로채 contracts/floating-window-contract.md의 "정말 종료할까요?" 확인을 띄우고, 취소 시 창과 엔진은 계속 동작 (FR-008, FR-010)
+- [X] T021 [US2] `src/DeskRotate/FloatingWindowForm.cs`와 `src/DeskRotate/Program.cs`에 종료 확정 시 전체 종료 로직 구현 — 어느 창에서든 확정하면 모든 데스크톱 창과 `RotationEngine`이 함께 종료 (FR-009)
 
 **Checkpoint**: 전환이 검증·재시도·보정되고, 종료는 확인 절차를 거쳐야만 일어난다.
 
@@ -104,13 +104,13 @@ plan.md의 Project Structure를 따른다 — 단일 프로젝트: `src/DeskRota
 
 ### Tests for User Story 3
 
-- [ ] T022 [US3] `tests/DeskRotate.Tests/RotationSessionTests.cs`(T010에서 생성)에 다음 전환까지 남은 시간·총 예상 실행 시간 계산 케이스 추가
+- [X] T022 [US3] `tests/DeskRotate.Tests/RotationSessionTests.cs`(T010에서 생성)에 다음 전환까지 남은 시간·총 예상 실행 시간 계산 케이스 추가
 
 ### Implementation for User Story 3
 
-- [ ] T023 [P] [US3] contracts/startup-input-contract.md에 따라 `src/DeskRotate/StartupInputForm.cs`에 총 예상 실행 시간(전환 간격 × 목표 횟수) 실시간 미리보기 추가 (FR-014)
-- [ ] T024 [P] [US3] `src/DeskRotate/FloatingWindowForm.cs`에 매초 갱신되는 남은 시간·종료까지 남은 전체 시간 표시 라벨과, 시작 시 계산된 총 예상 실행 시간(고정값)을 실행 중에도 계속 보이도록 하는 라벨을 추가, `RotationSession`에 바인딩 (FR-005, FR-014)
-- [ ] T025 [US3] `src/DeskRotate/FloatingWindowForm.cs`에 초기 위치를 화면 상단 중앙(12시 방향)으로 설정하고 드래그 이동을 지원하도록 구현, 재시작 시 위치 초기화 (FR-021)
+- [X] T023 [P] [US3] contracts/startup-input-contract.md에 따라 `src/DeskRotate/StartupInputForm.cs`에 총 예상 실행 시간(전환 간격 × 목표 횟수) 실시간 미리보기 추가 (FR-014)
+- [X] T024 [P] [US3] `src/DeskRotate/FloatingWindowForm.cs`에 매초 갱신되는 남은 시간·종료까지 남은 전체 시간 표시 라벨과, 시작 시 계산된 총 예상 실행 시간(고정값)을 실행 중에도 계속 보이도록 하는 라벨을 추가, `RotationSession`에 바인딩 (FR-005, FR-014)
+- [X] T025 [US3] `src/DeskRotate/FloatingWindowForm.cs`에 초기 위치를 화면 상단 중앙(12시 방향)으로 설정하고 드래그 이동을 지원하도록 구현, 재시작 시 위치 초기화 (FR-021)
 
 **Checkpoint**: 남은 시간·총 예상 실행 시간이 보이고, 창은 상단 중앙에서 시작해 드래그 가능하다.
 
@@ -124,8 +124,8 @@ plan.md의 Project Structure를 따른다 — 단일 프로젝트: `src/DeskRota
 
 ### Implementation for User Story 4
 
-- [ ] T026 [US4] `src/DeskRotate/RotationSession.cs`와 `src/DeskRotate/RotationEngine.cs`에 data-model.md의 `PerDesktopSwitchCount` 컬렉션을 추가하고, Matched 검증 또는 FR-019 자가 보정 결과일 때만 카운트를 증가 (FR-006 데이터 흐름)
-- [ ] T027 [P] [US4] `src/DeskRotate/FloatingWindowForm.cs`에 데스크톱별 전환 횟수 목록 표시 추가 (FR-006)
+- [X] T026 [US4] `src/DeskRotate/RotationSession.cs`와 `src/DeskRotate/RotationEngine.cs`에 data-model.md의 `PerDesktopSwitchCount` 컬렉션을 추가하고, Matched 검증 또는 FR-019 자가 보정 결과일 때만 카운트를 증가 (FR-006 데이터 흐름)
+- [X] T027 [P] [US4] `src/DeskRotate/FloatingWindowForm.cs`에 데스크톱별 전환 횟수 목록 표시 추가 (FR-006)
 
 **Checkpoint**: 4개 유저 스토리 모두 독립적으로 동작한다.
 
@@ -136,8 +136,10 @@ plan.md의 Project Structure를 따른다 — 단일 프로젝트: `src/DeskRota
 **Purpose**: 여러 유저 스토리에 걸친 마무리 작업
 
 - [ ] T028 [P] quickstart.md의 7개 검증 시나리오를 처음부터 끝까지 수동으로 실행하고 결과 기록
-- [ ] T029 [P] `src/DeskRotate/VirtualDesktopInterop.cs`와 `src/DeskRotate/KeyboardSimulator.cs`에 "공식 API만 사용" 제약을 명시하는 XML 문서 주석 추가 (향후 유지보수자를 위한 가드레일)
-- [ ] T030 spec.md Clarifications에서 확정한 제약(비공식 COM 인터페이스 금지, `SetForegroundWindow` 등 강제 포커스 트릭 금지)이 코드 어디에도 위반되지 않았는지 최종 점검
+  - 2026-08-11 실제 Windows 11 머신(.NET 8 SDK 설치)에서 부분 실행함: 시나리오 1(시작 입력·초기 설정), 2(실제 자동 전환 — 가상 데스크톱이 실제로 바뀌는 것을 확인), 3(남은 시간·총 예상 실행 시간·데스크톱별 횟수 표시), 5(종료 확인 다이얼로그의 취소/확정 양쪽 경로, 다이얼로그가 떠 있는 동안 타이머 유지)는 확인 완료. 이 과정에서 실제 크래시 버그(SendInput 구조체 크기 오류)와 UI 버그(DPI 스케일링으로 시작 버튼이 안 보이던 문제)를 발견해 수정함 — 커밋 05b7d3c 참고.
+  - 미확인 상태로 남은 것: 시나리오 4(목표 도달 후 "완료" 문구 표시를 화면으로 직접 확인은 못 함, 다만 크래시 없이 계속 응답함은 확인), 6(검증 실패→재시도 유발), 7(플로팅 창 초기 위치가 정확히 상단 중앙인지 픽셀 단위 확인), 8(장시간 실행 안정성) — 추가 확인이 필요하면 이어서 진행 가능.
+- [X] T029 [P] `src/DeskRotate/VirtualDesktopInterop.cs`와 `src/DeskRotate/KeyboardSimulator.cs`에 "공식 API만 사용" 제약을 명시하는 XML 문서 주석 추가 (향후 유지보수자를 위한 가드레일)
+- [X] T030 spec.md Clarifications에서 확정한 제약(비공식 COM 인터페이스 금지, `SetForegroundWindow` 등 강제 포커스 트릭 금지)이 코드 어디에도 위반되지 않았는지 최종 점검
 
 ---
 
@@ -216,3 +218,9 @@ Task: "src/DeskRotate/FloatingWindowForm.cs에 종료 확인 다이얼로그 구
 - 논리적 단위(태스크 또는 스토리)마다 커밋
 - 체크포인트마다 멈춰서 스토리를 독립적으로 검증할 것
 - 이 프로젝트는 개인용 단일 사용자 데스크톱 앱이므로 팀 병렬 전략(Parallel Team Strategy)은 해당 없음 — 우선순위 순서(P1 → P1 → P1 → P2)대로 순차 진행을 권장
+
+---
+
+## Phase 8: Convergence
+
+- [X] T031 `src/DeskRotate/DeskRotate.csproj`에 `<SupportedOSPlatformVersion>` 속성을 추가해 plan.md Technical Context가 명시한 최소 지원 버전(Windows 10 1903+)을 프로젝트 설정에 반영 per plan.md: Target Platform (partial)

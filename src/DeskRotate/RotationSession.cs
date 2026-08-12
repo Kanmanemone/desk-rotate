@@ -1,0 +1,114 @@
+namespace DeskRotate;
+
+/// <summary>
+/// 앱 실행 중 유지되는 유일한 상태 객체 (data-model.md RotationSession).
+/// 세션 범위에서만 유지되며 영속화되지 않는다 (spec.md FR-007).
+/// </summary>
+public sealed class RotationSession
+{
+    public int TotalDesktopCount { get; }
+    public int IntervalSeconds { get; }
+    public int TargetSwitchCount { get; }
+
+    /// <summary>전환 간격 × 목표 총 전환 횟수 (FR-014).</summary>
+    public int TotalPlannedRuntimeSeconds => IntervalSeconds * TargetSwitchCount;
+
+    /// <summary>검증으로 확인된 현재 데스크톱 번호 (1..TotalDesktopCount).</summary>
+    public int CurrentDesktopIndex { get; set; } = 1;
+
+    /// <summary>검증까지 완료된 누적 전환 횟수.</summary>
+    public int CompletedSwitchCount { get; private set; }
+
+    /// <summary>목표 총 전환 횟수에 도달했는지 여부 (FR-015).</summary>
+    public bool TargetReached => CompletedSwitchCount >= TargetSwitchCount;
+
+    /// <summary>다음 자동 전환까지 남은 시간(초). 목표 도달 시 의미 없음.</summary>
+    public int RemainingSecondsToNextSwitch { get; private set; }
+
+    /// <summary>프로그램 종료까지 남은 전체 시간(초).</summary>
+    public int RemainingSecondsToFinish { get; private set; }
+
+    /// <summary>가장 최근 전환 시도의 검증 결과 (아직 없으면 null).</summary>
+    public VerificationOutcome? LastVerification { get; set; }
+
+    /// <summary>진행 중인 전환 시도의 재시도 횟수.</summary>
+    public int RetryCount { get; set; }
+
+    /// <summary>데스크톱 번호별 검증된 누적 전환 횟수 (FR-006, data-model.md PerDesktopSwitchCount).</summary>
+    public IReadOnlyDictionary<int, int> PerDesktopSwitchCounts => _perDesktopSwitchCounts;
+
+    private readonly Dictionary<int, int> _perDesktopSwitchCounts;
+
+    public RotationSession(int totalDesktopCount, int intervalSeconds, int targetSwitchCount)
+    {
+        if (totalDesktopCount < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(totalDesktopCount), "1 이상이어야 합니다.");
+        }
+
+        if (intervalSeconds < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(intervalSeconds), "1 이상이어야 합니다.");
+        }
+
+        if (targetSwitchCount < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(targetSwitchCount), "1 이상이어야 합니다.");
+        }
+
+        TotalDesktopCount = totalDesktopCount;
+        IntervalSeconds = intervalSeconds;
+        TargetSwitchCount = targetSwitchCount;
+
+        RemainingSecondsToNextSwitch = intervalSeconds;
+        RemainingSecondsToFinish = TotalPlannedRuntimeSeconds;
+
+        _perDesktopSwitchCounts = new Dictionary<int, int>();
+        for (int i = 1; i <= totalDesktopCount; i++)
+        {
+            _perDesktopSwitchCounts[i] = 0;
+        }
+    }
+
+    /// <summary>
+    /// 현재 데스크톱 번호를 기준으로, 균일 순환(wrap) 방식에 따른 다음 목표 데스크톱 번호를 계산한다
+    /// (FR-002 — 핑퐁 방식이 아닌 순환 방식, 마지막에서 첫 번째로 되돌아감).
+    /// </summary>
+    public int ComputeNextDesktopIndex()
+    {
+        return CurrentDesktopIndex % TotalDesktopCount + 1;
+    }
+
+    /// <summary>매초 호출되어 남은 시간 카운트다운을 진행한다 (목표 도달 후에는 더 감소하지 않음).</summary>
+    public void Tick()
+    {
+        if (TargetReached)
+        {
+            return;
+        }
+
+        if (RemainingSecondsToNextSwitch > 0)
+        {
+            RemainingSecondsToNextSwitch--;
+        }
+
+        if (RemainingSecondsToFinish > 0)
+        {
+            RemainingSecondsToFinish--;
+        }
+    }
+
+    /// <summary>
+    /// 전환이 검증까지 완료됐을 때(정상 일치 또는 FR-019 자가 보정) 호출 —
+    /// 데스크톱별 카운트와 누적 횟수를 늘리고 다음 간격 카운트다운을 리셋한다.
+    /// </summary>
+    public void RecordSwitchCompleted(int verifiedDesktopIndex)
+    {
+        CurrentDesktopIndex = verifiedDesktopIndex;
+        CompletedSwitchCount++;
+        RetryCount = 0;
+        RemainingSecondsToNextSwitch = IntervalSeconds;
+
+        _perDesktopSwitchCounts[verifiedDesktopIndex] = _perDesktopSwitchCounts.GetValueOrDefault(verifiedDesktopIndex) + 1;
+    }
+}
