@@ -23,6 +23,15 @@ public sealed class RotationEngine
     private const int GuaranteedSeekToFirstAttempts = 60;
 
     /// <summary>
+    /// <see cref="SeekToActualFirstDesktopBlindly"/>가 상황과 무관하게 항상 정확히 걸리는 시간(초) —
+    /// <see cref="GuaranteedSeekToFirstAttempts"/> × <see cref="InterKeystrokeDelayMilliseconds"/>에서
+    /// 계산된다. 이후 범위 안 데스크톱을 방문·생성하며 준비하는 시간은 이미 존재하는 데스크톱 수에
+    /// 따라 달라져 정확한 초로 예측할 수 없으므로 포함하지 않는다 — 시작 입력 폼(StartupInputForm)이
+    /// 사용자에게 "시작 전 최소 몇 초가 걸리는지" 안내하는 데 이 값을 그대로 쓴다.
+    /// </summary>
+    public const int GuaranteedFirstDesktopSeekSeconds = GuaranteedSeekToFirstAttempts * InterKeystrokeDelayMilliseconds / 1000;
+
+    /// <summary>
     /// 새로 만든 플로팅 창을 바로 다음 단계의 이동 판정 기준(참조 창)으로 쓰기 전에 주는 안정화
     /// 시간(ms) — 창을 막 Show()한 직후에는 셸의 가상 데스크톱 추적에 아직 완전히 반영되지 않았을
     /// 가능성을 배제할 수 없다(간헐적으로 재발한 오탐성 데스크톱 추가 생성 버그의 유력한 원인 중

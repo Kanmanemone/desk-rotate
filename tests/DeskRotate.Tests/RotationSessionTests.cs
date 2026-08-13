@@ -315,4 +315,58 @@ public class RotationSessionTests
 
         Assert.Equal(9, session.RemainingSecondsToNextSwitch);
     }
+
+    // --- 원형 진행률 그래픽 (FR-036) ---
+
+    [Fact]
+    public void ShowProgressRing_DefaultsToOn()
+    {
+        var session = new RotationSession(rangeStart: 1, rangeEnd: 3, intervalSeconds: 10, targetCycleCount: 1);
+
+        Assert.True(session.ShowProgressRing);
+    }
+
+    [Fact]
+    public void ShowProgressRing_CanBeOverridden()
+    {
+        var session = new RotationSession(
+            rangeStart: 1, rangeEnd: 3, intervalSeconds: 10, targetCycleCount: 1,
+            showProgressRing: false);
+
+        Assert.False(session.ShowProgressRing);
+    }
+
+    [Fact]
+    public void NextSwitchProgressRatio_StartsAtFull()
+    {
+        var session = new RotationSession(rangeStart: 1, rangeEnd: 2, intervalSeconds: 10, targetCycleCount: 1);
+
+        Assert.Equal(1.0, session.NextSwitchProgressRatio);
+    }
+
+    [Fact]
+    public void NextSwitchProgressRatio_DecreasesLinearlyAsCountdownTicks()
+    {
+        var session = new RotationSession(rangeStart: 1, rangeEnd: 2, intervalSeconds: 10, targetCycleCount: 1);
+
+        session.Tick();
+        session.Tick();
+
+        // RemainingSecondsToNextSwitch = 8/10.
+        Assert.Equal(0.8, session.NextSwitchProgressRatio, precision: 5);
+    }
+
+    [Fact]
+    public void NextSwitchProgressRatio_FreezesWhilePaused()
+    {
+        var session = new RotationSession(rangeStart: 1, rangeEnd: 2, intervalSeconds: 10, targetCycleCount: 1);
+        session.Tick();
+        double ratioBeforePause = session.NextSwitchProgressRatio;
+
+        session.TogglePause();
+        session.Tick();
+        session.Tick();
+
+        Assert.Equal(ratioBeforePause, session.NextSwitchProgressRatio);
+    }
 }

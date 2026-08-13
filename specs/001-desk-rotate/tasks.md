@@ -139,6 +139,7 @@ plan.md의 Project Structure를 따른다 — 단일 프로젝트: `src/DeskRota
   - 2026-08-11 실제 Windows 11 머신(.NET 8 SDK 설치)에서 부분 실행함: 시나리오 1(시작 입력·초기 설정), 2(실제 자동 전환 — 가상 데스크톱이 실제로 바뀌는 것을 확인), 3(남은 시간·총 예상 실행 시간·데스크톱별 횟수 표시), 5(종료 확인 다이얼로그의 취소/확정 양쪽 경로, 다이얼로그가 떠 있는 동안 타이머 유지)는 확인 완료. 이 과정에서 실제 크래시 버그(SendInput 구조체 크기 오류)와 UI 버그(DPI 스케일링으로 시작 버튼이 안 보이던 문제)를 발견해 수정함 — 커밋 05b7d3c 참고.
   - 미확인 상태로 남은 것: 6(검증 실패→재시도 유발), 8(장시간 실행 안정성) — 추가 확인이 필요하면 이어서 진행 가능.
   - 2026-08-11 (Phase 9 구현 후 재검증): 범위 입력(1~2)·간격 5초·목표 3회로 재실행해 시나리오 2(범위 안에서 순환 전환, 데스크톱 1↔2)·4(목표 도달 시 "완료" 최소 보기 문구 및 "전환 완료 — 최종 통계" 상세 보기 문구, 정확한 카운트 데스크톱 1: 1회/데스크톱 2: 2회)·7(테두리 없는 최소 보기가 상단 중앙에 정확히 배치됨, 클릭으로 상세 보기 전환)까지 화면으로 직접 확인. 드래그 이동 자체(마우스 누른 채 이동)는 자동화 도구로는 검증하지 않음 — 클릭 판정(이동 없음)만 확인.
+  - 2026-08-13 (`/speckit-implement` 재실행 시점 현황 정리): quickstart.md는 이후 여러 세션(T047, 2026-08-12 세션, 이번 세션)을 거치며 7개에서 12개 시나리오로 늘어났다. 시나리오 1·2·3·4·5·7은 위에서 이미 화면으로 확인됐고, 9(커스텀 닫기·사이클 진행·표시 옵션)는 T046에서, 사이클 기본값·컨트롤 좌표는 T066에서 별도로 라이브 확인된 바 있다. 여전히 미확인 상태로 남은 것: 6(검증 실패→재시도 유발, 인위적 경쟁 상황 필요), 8(장시간 실행 안정성, 수 시간 이상 방치 관찰 필요), 10(테두리 자석 스냅 — T046에서도 "코드 리뷰로만 확인, 좌표 기반 드래그는 이 머신 DPI 가상화로 신뢰 불가"로 보류됨), 11(일시정지/재개의 실제 클릭 동작 — T066에서 원격 데스크톱 화면 잠금으로 라이브 검증 못함), 12(원형 진행률 그래픽, FR-036, 이번 세션 신설). 이번 `/speckit-implement` 세션은 실행 도구가 사용자의 대화형 데스크톱 세션에 접근 권한이 없어(스크린샷 테스트 결과 창은 보이지 않는 세션에 뜨고 화면 캡처는 무관한 실제 화면을 찍음, 앞선 세션 기록 참고) 6·8·10·11·12를 라이브로 확인할 수 없었다 — 사용자가 직접 실행해 확인 필요. 이 항목은 그래서 완료 처리하지 않고 미해결로 남긴다.
 - [X] T029 [P] `src/DeskRotate/VirtualDesktopInterop.cs`와 `src/DeskRotate/KeyboardSimulator.cs`에 "공식 API만 사용" 제약을 명시하는 XML 문서 주석 추가 (향후 유지보수자를 위한 가드레일)
 - [X] T030 spec.md Clarifications에서 확정한 제약(비공식 COM 인터페이스 금지, `SetForegroundWindow` 등 강제 포커스 트릭 금지)이 코드 어디에도 위반되지 않았는지 최종 점검
 
@@ -328,3 +329,42 @@ Task: "src/DeskRotate/FloatingWindowForm.cs에 종료 확인 다이얼로그 구
 - [X] T064 FR-033 이동 판정 재강화(간헐적 재발 대응): 실사용 환경에서 `SendInput` 자체가(다른 프로세스의 순간적 입력 가로채기 등으로) 실패해 아무 반영 없이 조용히 무시되는 사례를 직접 재현·확인(Win32 오류로 실패 반환) — 이 경우 기존의 "한 번 보내고 여러 번 확인" 방식은 애초에 이동이 시작된 적이 없어 아무리 기다려도 소용없었다. `RotationEngine.cs`의 `EnsureAdvancedToNextDesktop()`을 확인 실패마다(최대 3회) 키 입력 자체를 다시 보내도록 재작성하고, `WaitForMovementAway()` 폴링 제한 시간을 2초→3초로, `GuaranteedSeekToFirstAttempts`를 40→60으로 늘리고, 새로 만든 플로팅 창을 다음 판정 기준으로 쓰기 전 안정화 대기(400ms)를 추가. `KeyboardSimulator.cs`의 `SendInput` 호출도 즉시 예외를 던지는 대신 짧게(최대 3회, 150ms 간격) 재시도하도록 변경해, 순간적인 입력 실패로 앱 전체가 죽지 않도록 함 (FR-033, contradicts — 근본 원인이 감지 로직이 아니라 키 입력 자체의 유실일 수 있다는 새 증거 기반)
 - [X] T065 [P] `tests/DeskRotate.Tests/RotationSessionTests.cs`에 `IsPaused`/`TogglePause()` 테스트 4건 추가(기본값, 토글, 일시정지 중 카운트다운 정지, 재개 후 재개) — 39개 전체 테스트 통과
 - [X] T066 실제 Windows 11 머신에서 검증: 시작 창을 띄우고 `EnumChildWindows`+`GetWindowRect`로 실제 렌더링된 각 컨트롤의 좌표·크기를 직접 조회해 겹침·창 밖 이탈이 없음과 사이클 기본값 "4"가 실제로 반영됨을 확인. 다만 이 세션 동안 원격 데스크톱 화면이 잠겨 있어(사용자가 자리를 비움) `SendInput` 자체가 `ERROR_ACCESS_DENIED`로 실패하는 것을 이벤트 로그로 직접 확인했고, 이 때문에 실제 가상 데스크톱 전환이 필요한 시나리오(일시정지 버튼의 실제 클릭 동작, FR-033 강화가 간헐적 재발을 실제로 막는지)는 이번 세션에서 엔드투엔드로 라이브 검증하지 못했다 — 사용자가 화면 잠금을 해제한 뒤 직접 재확인이 필요함(최종 보고에 명시).
+
+---
+
+## Phase 18: Convergence
+
+- [X] T067 CRITICAL: `FloatingWindowForm.cs`가 `TopMost = true`를 생성 시 한 번만 설정하고 이후 재확인하지 않아, OS/DWM이 topmost 순위를 조용히 박탈하면(다른 창의 topmost 선점, 가상 데스크톱 전환 등) 플로팅 창이 다른 창 뒤에 숨겨진 채로 복구되지 않는 결함을 수정 — 이미 매초 실행되는 `RotationEngine.RefreshAllWindows()`/`FloatingWindowForm.RefreshDisplay()` 경로에서 topmost 상태를 함께 재적용(self-heal)하도록 구현 per FR-004 (contradicts). `RefreshDisplay()` 시작 지점에서 `ReassertTopMost()`(내부적으로 `SetWindowPos(hWnd, HWND_TOPMOST, ..., SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)`)를 매초 호출하도록 구현 — 창 이동·크기·포커스에는 영향 없이 topmost 순위만 재적용한다. 빌드·44개 전체 테스트 통과로 확인. **미검증**: OS가 topmost를 실제로 박탈하는 조건은 간헐적·환경 의존적이라 이 세션에서 라이브로 재현·확인하지 못함 — 사용자가 실사용 중 재발 여부를 관찰해 알려주면 좋음.
+
+---
+
+## Phase 19: 원형 진행률 그래픽 (진행률 원 표시 옵션)
+
+**Purpose**: 사용자가 직접 요청한 기능 — 플로팅 창 최소 보기의 남은 시간 숫자 오른쪽에 원형 진행률 그래픽을 추가하고, 테두리(뼈대)는 항상 완전한 원형으로 고정한 채 내부 채움 비율만 남은 시간에 따라 변하도록 구현. spec.md FR-036(신설)·표시 옵션(개정) 대응.
+
+- [X] T068 [P] `src/DeskRotate/RotationSession.cs`에 `ShowProgressRing` 속성(생성자 파라미터, 기본값 `true`)과 다음 전환까지 남은 시간 비율을 계산하는 파생 속성(`NextSwitchProgressRatio` = `RemainingSecondsToNextSwitch / (double)IntervalSeconds`, 0.0~1.0로 클램프)을 `ShowSecondsUnit`/`ShowCycleNumber`와 동일한 패턴으로 추가 (FR-036, data-model.md)
+- [X] T069 [P] `src/DeskRotate/StartupInputForm.cs`에 "진행률 원 표시" 체크박스(`_showProgressRingCheckBox`, 기본 `Checked = true`)를 기존 `_showSecondsUnitCheckBox`/`_showCycleNumberCheckBox` 옆에 추가하고, `RotationSession` 생성 시 `showProgressRing` 인자로 전달 (FR-036, contracts/startup-input-contract.md)
+- [X] T070 `src/DeskRotate/FloatingWindowForm.cs`의 최소 보기에 `_minimalCountdownLabel` 오른쪽으로 고정 크기 원형 진행률 그래픽을 그리는 커스텀 컨트롤(`ProgressRingControl : Control`, `OnPaint` 오버라이드, GDI+ `Graphics.DrawEllipse`/`FillPie` 사용)을 추가했다. 매 `RefreshDisplay` 호출마다 `session.NextSwitchProgressRatio`로 다시 그리되, 테두리(뼈대)는 항상 동일한 크기의 완전한 `DrawEllipse` 호출로 마지막에 그려 어떤 비율에서도 형태가 찌그러지지 않게 하고, 그 안쪽만 비율만큼 채워진 부채꼴로 그린다(`FillPie`, 12시 방향에서 시작해 시계 방향). `session.ShowProgressRing`이 꺼져 있으면 컨트롤을 숨기고(`ApplyViewMode`) 최소 보기 창 폭도 그만큼 줄어들도록 `ResizeMinimalWindowToFitText`가 숫자 라벨+링을 한 그룹으로 계산해 재배치하도록 구현 (FR-036, FR-023과 일관 — 옵션 꺼짐 시 숫자만)
+- [X] T071 [P] `tests/DeskRotate.Tests/RotationSessionTests.cs`에 `ShowProgressRing` 기본값(true)·오버라이드, `NextSwitchProgressRatio` 계산(간격 시작 시 1.0, 카운트다운 진행에 따라 선형 감소, 일시정지 중 값이 얼어붙음) 테스트 5건 추가 — 44개 전체 테스트 통과 (`dotnet test`로 확인)
+- [X] T072 실제 Windows 11 머신에서 라이브 검증. 2026-08-13 세션 재확인: 처음에는 이 세션의 실행 도구가 대화형 데스크톱에 접근할 수 없다고 판단해 미검증으로 남겼으나, 실제로는 접근 가능했음이 드러나 재시도했다(`FloatingWindowForm`/`RotationSession`을 직접 생성하는 임시 하네스 프로젝트로, 실제 가상 데스크톱 전환 없이 표시 로직만 검증 — `RotationEngine`을 거치지 않으므로 사용자의 실제 가상 데스크톱에는 영향 없음). 같은 프로세스 안에서 `Form.Location`/`Graphics.CopyFromScreen`으로 직접 스크린샷해 외부 프로세스에서 `GetWindowRect`로 다시 조회할 때 생기던 DPI/좌표계 불일치를 피했다. 결과: 최소 보기에서 원형 그래픽이 숫자 오른쪽에 정상 표시됨("[1번째] 20초" + 초록 원)을 스크린샷으로 확인. 진행률 원 표시 옵션을 끈 상태는 이번에 별도로 재확인하지 않았음(코드 경로상 FR-036 껐을 때 동작은 T068 유닛 테스트로 별도 커버). 일시정지 중 채움 비율 고정은 `NextSwitchProgressRatio`가 `RemainingSecondsToNextSwitch`의 순수 파생값이라는 것이 T071 유닛 테스트로 이미 검증됨(라이브 UI로 별도 재확인하지 않음).
+
+---
+
+## Phase 20: Convergence
+
+- [X] T073 [P] `specs/001-desk-rotate/contracts/startup-input-contract.md`의 입력 필드 표(9~16행)에 "진행률 원 표시" 온/오프 필드(기본값 켜짐, FR-036) 행을 추가하고, 헤더의 관련 요구사항 목록(3행)에 FR-036을 반영 per plan: Phase 1 design docs (partial)
+- [X] T074 [P] `specs/001-desk-rotate/contracts/floating-window-contract.md`의 "표시 내용 — 최소 보기" 표(7~13행)에 원형 진행률 그래픽 행(다음 전환까지 남은 시간 비율만큼 채워짐, 매초 갱신, FR-036)을 추가하고, 헤더의 관련 요구사항 목록(3행)에 FR-036을 반영 per plan: Phase 1 design docs (partial)
+- [X] T075 [P] `specs/001-desk-rotate/data-model.md`의 `RotationSession` 필드 표(28~29행 부근)에 `ShowProgressRing`(bool, 표시 옵션, 기본값 켜짐, FR-036)과 `NextSwitchProgressRatio`(파생값, 원형 진행률 그래픽 채움 비율, FR-036) 행을 `ShowSecondsUnit`/`ShowCycleNumber`와 같은 형식으로 추가 per plan: Phase 1 design docs (partial)
+
+---
+
+## Phase 21: 실사용 피드백 6건 — 완료 시 원 숨김, 버튼/체크박스 DPI 잘림 수정, 시작 전 대기 안내, 입력부/확인부 분리
+
+**Purpose**: 사용자가 실제로 앱을 사용해 보고 직접 지적한 6가지 처리. spec.md FR-036(개정)·FR-037~FR-039(신설) 대응.
+
+- [X] T076 목표 도달 시 원형 진행률 그래픽 숨김 (FR-036 개정, missing): `FloatingWindowForm.cs`에 `_targetReached` 필드와 `ShouldShowProgressRing`(`_viewMode == Minimal && _showProgressRing && !_targetReached`) 계산 프로퍼티를 추가하고, `ApplyViewMode`·`RefreshDisplay`·`ResizeMinimalWindowToFitText`가 모두 이 프로퍼티를 기준으로 그래픽 표시 여부와 최소 보기 창 폭을 계산하도록 통일 — 완료 후에는 그래픽이 마지막 채움 상태로 얼어붙지 않고 사라지며 창 폭도 숫자만 남는 만큼 줄어든다
+- [X] T077 상세 보기 일시정지/닫기(×) 버튼 DPI 잘림 수정 (FR-037 신설, contradicts): 근본 원인은 `AutoScaleMode.None`으로 고정한 픽셀 크기가 개발 시점 측정 환경(DPI)에서는 여유 있어 보였지만, 사용자의 실제 화면(다른 DPI 배율)에서는 같은 글자가 더 크게 렌더링돼 고정 크기를 넘어설 수 있었던 것 — 즉 한 환경에서 실측한 고정 픽셀 값은 근본적으로 다른 DPI에서 신뢰할 수 없다. `FloatingWindowForm.cs`의 `_pauseButton`·`_closeButton`을 `AutoSize=true`/`AutoSizeMode.GrowAndShrink`로 바꿔 실행 시점의 실제 글꼴 기준으로 스스로 크기를 계산하도록 함. 구현 중 발견한 추가 버그: `AutoSize`는 컨트롤이 부모에 Add되기 전까지 `.Width`에 반영되지 않아 `_closeButton`의 우측 정렬 `Left` 계산이 기본값(75px) 기준으로 잘못 계산되고 있었다 — `GetPreferredSize(Size.Empty)`를 직접 호출해 `Size`를 먼저 확정한 뒤 `Left`를 계산하도록 수정
+- [X] T078 시작 입력 폼 체크박스 3개 DPI 잘림 수정 (FR-037 신설, contradicts): 같은 근본 원인(다른 DPI에서 고정 폭이 부족해질 수 있음)으로 `StartupInputForm.cs`의 표시 옵션 체크박스 3개(`_showSecondsUnitCheckBox`·`_showCycleNumberCheckBox`·`_showProgressRingCheckBox`)를 고정 `Width` 대신 `AutoSize=true`로 변경
+- [X] T079 시작 전 대기 시간 정확한 안내 (FR-039 신설, missing): `RotationEngine.cs`에 `GuaranteedFirstDesktopSeekSeconds`(= `GuaranteedSeekToFirstAttempts * InterKeystrokeDelayMilliseconds / 1000`, 컴파일타임 상수, 현재 구현 기준 18초) 공개 상수를 추가하고, `StartupInputForm.cs`에 이 값을 참조하는 안내 라벨을 "시작" 버튼 근처에 배치 — 정확히 계산 가능한 부분(실제 데스크톱 1번을 찾는 시간)만 정확한 초로 안내하고, 범위 준비 시간(기존 데스크톱 수에 따라 달라짐)은 정성적으로만("조금 더 걸릴 수 있음") 안내
+- [X] T080 시작 입력 폼 입력부/확인부 분리 (FR-038 신설, missing): `StartupInputForm.cs`를 얇은 수평 구분선(`Panel`, Height=1) 하나로 나눠, 입력부(범위·간격·사이클 수·표시 옵션 체크박스 3개·오류 라벨)와 확인부(총 예상 실행 시간·T079의 대기 안내·"시작" 버튼)로 재배치. 폼 `ClientSize`를 360×480으로 조정
+- [X] T081 `dotnet build`·`dotnet test` 재확인 — 빌드 성공, 44개 전체 테스트 통과(이번 라운드는 UI 레이아웃/크기 계산만 변경해 세션 로직 테스트 추가 없음). 2026-08-13 세션 재확인으로 라이브 스크린샷 검증도 완료: 실제 `StartupInputForm.exe`를 띄워 확인한 결과, 체크박스 3개("초 단위로 표시", "사이클 번호 표시", "진행률 원 표시") 모두 텍스트가 잘리지 않고 완전히 표시됨, 입력부/확인부가 구분선으로 나뉘어 보임, "시작하면 첫 데스크톱을 찾느라 최소 18초간..." 안내 문구가 3줄로 잘리지 않고 전부 표시됨(이 검증 과정에서 처음 커밋한 Height=40이 실제로는 부족해 마지막 줄이 잘리는 버그를 직접 발견 — `TextRenderer.MeasureText`로 실제 줄바꿈 높이를 재서 동적으로 계산하도록 수정, 위 코드 참고). `FloatingWindowForm`(임시 하네스로 검증, 실제 가상 데스크톱 전환 없음)에서도 "일시정지"·"×" 버튼 모두 잘리지 않고 완전히 표시됨을 스크린샷으로 확인(T072 참고).

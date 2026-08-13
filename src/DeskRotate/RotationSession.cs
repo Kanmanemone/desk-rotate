@@ -32,6 +32,16 @@ public sealed class RotationSession
     /// <summary>최소 보기 앞에 "[N번째] "를 붙일지 여부 (FR-031).</summary>
     public bool ShowCycleNumber { get; }
 
+    /// <summary>최소 보기 숫자 오른쪽에 원형 진행률 그래픽을 표시할지 여부 (FR-036).</summary>
+    public bool ShowProgressRing { get; }
+
+    /// <summary>
+    /// 다음 자동 전환까지 남은 시간의 비율(1.0 = 방금 전환됨, 0.0 = 곧 전환)로, 원형 진행률
+    /// 그래픽의 내부 채움 비율로 쓰인다(FR-036). RemainingSecondsToNextSwitch에서 순수하게
+    /// 파생되므로 일시정지·목표 도달 시에도 그 값이 멈추는 것과 동일하게 자동으로 함께 멈춘다.
+    /// </summary>
+    public double NextSwitchProgressRatio => Math.Clamp((double)RemainingSecondsToNextSwitch / IntervalSeconds, 0.0, 1.0);
+
     /// <summary>현재 진행 중인 사이클 번호(1-based), 목표 사이클 수를 넘지 않도록 캡핑된다 (FR-030).</summary>
     public int CurrentCycleNumber => Math.Min((CompletedSwitchCount / DesktopCount) + 1, TargetCycleCount);
 
@@ -74,7 +84,8 @@ public sealed class RotationSession
         int intervalSeconds,
         int targetCycleCount,
         bool showSecondsUnit = true,
-        bool showCycleNumber = true)
+        bool showCycleNumber = true,
+        bool showProgressRing = true)
     {
         if (rangeStart < 1)
         {
@@ -103,6 +114,7 @@ public sealed class RotationSession
         TargetSwitchCount = targetCycleCount * DesktopCount;
         ShowSecondsUnit = showSecondsUnit;
         ShowCycleNumber = showCycleNumber;
+        ShowProgressRing = showProgressRing;
 
         CurrentDesktopIndex = rangeStart;
         RemainingSecondsToNextSwitch = intervalSeconds;

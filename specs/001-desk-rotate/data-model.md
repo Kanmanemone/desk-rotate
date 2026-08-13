@@ -27,6 +27,8 @@ spec.md의 Key Entities를 구현 가능한 형태로 구체화한다. 모든 �
 | `RetryCount` | int | 진행 중인 전환 시도의 재시도 횟수 | 0..RetryLimit(3), 성공하거나 한도 도달 시 0으로 리셋 |
 | `ShowSecondsUnit` | bool | 표시 옵션 — 최소 보기 숫자 뒤에 "초"를 붙일지 | 시작 입력 폼에서 설정, 기본값 켜짐 (FR-031) |
 | `ShowCycleNumber` | bool | 표시 옵션 — 최소 보기 앞에 "[N번째] "를 붙일지 | 시작 입력 폼에서 설정, 기본값 켜짐 (FR-031) |
+| `ShowProgressRing` | bool | 표시 옵션 — 최소 보기 숫자 오른쪽에 원형 진행률 그래픽을 표시할지 | 시작 입력 폼에서 설정, 기본값 켜짐 (FR-036) |
+| `NextSwitchProgressRatio` | double | 원형 진행률 그래픽의 채움 비율 — `RemainingSecondsToNextSwitch / IntervalSeconds`, 0.0~1.0로 클램프 | 파생 필드. `RemainingSecondsToNextSwitch`에서 순수하게 계산되므로 일시정지·목표 도달 시에도 그 값과 함께 자동으로 멈춘다 (FR-036) |
 | `IsPaused` | bool | 사용자가 일시정지를 요청했는지 여부 (FR-035) | 기본값 꺼짐. 켜져 있으면 남은 시간 카운트다운과 새 전환 시도가 모두 멈춘다(진행 중이던 검증·재시도 시퀀스는 예외) |
 
 `CurrentDesktopIndex`와 `PerDesktopSwitchCounts`의 키는 모두 **절대 데스크톱 번호**(`RangeStart`..`RangeEnd`)를 사용한다 — 범위가 3~7이면 "데스크톱 3"처럼 사용자가 입력한 번호 그대로 표시되어야 하므로, 내부적으로 1부터 다시 세는 상대 인덱스를 쓰지 않는다.
