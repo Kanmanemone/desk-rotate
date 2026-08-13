@@ -20,7 +20,11 @@ public sealed class FloatingWindowForm : Form
     private const int EdgeSnapThresholdPixels = 15;
 
     private static readonly Size MinimalSize = new(100, 70);
-    private static readonly Size DetailedSize = new(240, 260);
+    // 상세 보기 라벨 Height/Width는 실제 실행 화면에서 쓰는 글꼴로 TextRenderer.MeasureText를
+    // 직접 측정해 정한 값이다 — 이전에는 Height=20/18로 잡혀 있어 텍스트 아래쪽 몇 픽셀이 잘려
+    // 보이고, "종료까지 남은 시간"처럼 초 단위 숫자가 커지면 폭도 부족해 오른쪽이 잘리는 문제가
+    // 있었다(라벨 잘림 버그). 6자리 초(최대 999999초)까지 잘리지 않도록 여유를 뒀다.
+    private static readonly Size DetailedSize = new(280, 312);
 
     private readonly int _desktopIndex;
     private ViewMode _viewMode = ViewMode.Minimal;
@@ -33,6 +37,7 @@ public sealed class FloatingWindowForm : Form
     private readonly Label _countsHeaderLabel;
     private readonly ListBox _perDesktopCountsList;
     private readonly Button _closeButton;
+    private readonly Button _pauseButton;
 
     private bool _mouseDown;
     private bool _dragged;
@@ -41,6 +46,9 @@ public sealed class FloatingWindowForm : Form
 
     /// <summary>사용자가 종료 확인 다이얼로그에서 "예"를 선택했을 때 발생한다 (FR-008, FR-009).</summary>
     public event Action? ExitConfirmed;
+
+    /// <summary>사용자가 상세 보기의 일시정지/재개 버튼을 눌렀을 때 발생한다 (FR-035).</summary>
+    public event Action? PauseToggleRequested;
 
     /// <summary>
     /// true면 닫힐 때 확인 다이얼로그를 건너뛴다 — 다른 창에서 이미 종료가 확정되어
@@ -75,23 +83,28 @@ public sealed class FloatingWindowForm : Form
             Font = new Font(FontFamily.GenericSansSerif, 22F, FontStyle.Bold),
         };
 
-        _nextSwitchLabel = new Label { Left = 10, Top = 10, Width = 190, Height = 20 };
-        _remainingToFinishLabel = new Label { Left = 10, Top = 32, Width = 220, Height = 20 };
-        _totalPlannedRuntimeLabel = new Label { Left = 10, Top = 54, Width = 220, Height = 20 };
-        _cycleProgressLabel = new Label { Left = 10, Top = 76, Width = 220, Height = 20 };
-        _countsHeaderLabel = new Label { Left = 10, Top = 98, Width = 220, Height = 18, Text = "데스크톱별 전환 횟수:" };
-        _perDesktopCountsList = new ListBox { Left = 10, Top = 118, Width = 220, Height = 130 };
+        _nextSwitchLabel = new Label { Left = 10, Top = 36, Width = 260, Height = 26 };
+        _remainingToFinishLabel = new Label { Left = 10, Top = 64, Width = 260, Height = 26 };
+        _totalPlannedRuntimeLabel = new Label { Left = 10, Top = 92, Width = 260, Height = 26 };
+        _cycleProgressLabel = new Label { Left = 10, Top = 120, Width = 260, Height = 26 };
+        _countsHeaderLabel = new Label { Left = 10, Top = 148, Width = 260, Height = 26, Text = "데스크톱별 전환 횟수:" };
+        _perDesktopCountsList = new ListBox { Left = 10, Top = 176, Width = 260, Height = 126 };
 
         // 상세 보기 전용 커스텀 닫기 버튼 (FR-029) — 테두리 없는 창이라 기본 X 버튼이 없어,
         // 클릭하면 다른 닫기 경로와 동일하게 OnFormClosing의 종료 확인 절차로 이어진다.
-        _closeButton = new Button { Left = 204, Top = 6, Width = 26, Height = 22, Text = "×" };
+        _closeButton = new Button { Left = 244, Top = 6, Width = 26, Height = 26, Text = "×" };
         _closeButton.Click += (_, _) => Close();
+
+        // 일시정지/재개 버튼 (FR-035) — 상세 보기를 클릭해야만 보이며, 세션은 하나뿐이므로 눌렀을 때
+        // RotationEngine이 모든 데스크톱의 창에 동일하게 반영한다.
+        _pauseButton = new Button { Left = 10, Top = 6, Width = 90, Height = 26, Text = "일시정지" };
+        _pauseButton.Click += (_, _) => PauseToggleRequested?.Invoke();
 
         Controls.Add(_minimalCountdownLabel);
         Controls.AddRange(new Control[]
         {
             _nextSwitchLabel, _remainingToFinishLabel, _totalPlannedRuntimeLabel, _cycleProgressLabel,
-            _countsHeaderLabel, _perDesktopCountsList, _closeButton,
+            _countsHeaderLabel, _perDesktopCountsList, _closeButton, _pauseButton,
         });
 
         // 창 본문(최소 보기 숫자, 상세 보기 라벨들, 폼 배경) 어디를 눌러도 클릭/드래그를 인식한다.
@@ -218,6 +231,7 @@ public sealed class FloatingWindowForm : Form
         _countsHeaderLabel.Visible = detailed;
         _perDesktopCountsList.Visible = detailed;
         _closeButton.Visible = detailed;
+        _pauseButton.Visible = detailed;
 
         ClientSize = detailed ? DetailedSize : MinimalSize;
     }
@@ -261,7 +275,9 @@ public sealed class FloatingWindowForm : Form
 
         _nextSwitchLabel.Text = session.TargetReached
             ? "전환 완료 — 최종 통계"
-            : $"다음 전환까지: {session.RemainingSecondsToNextSwitch}초";
+            : session.IsPaused
+                ? "일시정지 중"
+                : $"다음 전환까지: {session.RemainingSecondsToNextSwitch}초";
 
         _remainingToFinishLabel.Text = session.TargetReached
             ? "종료까지 남은 시간: 0초"
@@ -269,6 +285,12 @@ public sealed class FloatingWindowForm : Form
 
         _totalPlannedRuntimeLabel.Text = $"총 예상 실행 시간: {session.TotalPlannedRuntimeSeconds}초";
         _cycleProgressLabel.Text = $"사이클: {session.CurrentCycleNumber} / {session.TargetCycleCount}";
+
+        // 목표 도달 후에는 일시정지 개념이 의미 없으므로 버튼을 비활성화한다 — 켜둬도 TogglePause
+        // 자체는 안전하지만(다음 전환이 없으므로 아무 효과 없음), 눌러도 아무 일도 없어 보이는
+        // 혼란을 막기 위해 아예 못 누르게 막는다.
+        _pauseButton.Text = session.IsPaused ? "재개" : "일시정지";
+        _pauseButton.Enabled = !session.TargetReached;
 
         int topIndex = _perDesktopCountsList.TopIndex;
         _perDesktopCountsList.BeginUpdate();
@@ -294,6 +316,11 @@ public sealed class FloatingWindowForm : Form
         if (session.TargetReached)
         {
             return "완료";
+        }
+
+        if (session.IsPaused)
+        {
+            return "일시정지";
         }
 
         string number = session.RemainingSecondsToNextSwitch.ToString();

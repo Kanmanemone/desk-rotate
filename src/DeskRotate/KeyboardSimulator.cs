@@ -78,6 +78,16 @@ public sealed class KeyboardSimulator
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, Input[] pInputs, int cbSize);
 
+    /// <summary>
+    /// SendInput이 실패할 때 즉시 예외를 던지는 대신 몇 번 재시도하는 횟수 — 다른 프로세스가
+    /// 아주 짧게 입력을 가로채거나(예: 순간적인 보안 데스크톱 전환) 시스템이 일시적으로 바쁠 때
+    /// SendInput이 실패하는 사례가 실제로 확인됐다(ERROR_ACCESS_DENIED). 이런 찰나의 방해까지
+    /// 매번 앱 전체 크래시로 이어지면, 장시간 백그라운드로 켜 두는 이 프로그램의 용도상 세션
+    /// 전체가 조용히 죽어버리는 결과가 되므로 짧게 재시도한다.
+    /// </summary>
+    private const int SendInputRetryAttempts = 3;
+    private const int SendInputRetryDelayMilliseconds = 150;
+
     /// <summary>Ctrl+Win+Left 또는 Ctrl+Win+Right를 한 번 눌렀다 뗀다.</summary>
     public void SendSwitchKeystroke(SwitchDirection direction)
     {
@@ -93,13 +103,7 @@ public sealed class KeyboardSimulator
             KeyUp(VkControl),
         };
 
-        int inputSize = Marshal.SizeOf<Input>();
-        uint sent = SendInput((uint)inputs.Length, inputs, inputSize);
-        if (sent != (uint)inputs.Length)
-        {
-            throw new InvalidOperationException(
-                $"SendInput sent {sent} of {inputs.Length} events (Win32 error {Marshal.GetLastWin32Error()}).");
-        }
+        SendInputWithRetry(inputs);
     }
 
     /// <summary>
@@ -119,13 +123,31 @@ public sealed class KeyboardSimulator
             KeyUp(VkControl),
         };
 
+        SendInputWithRetry(inputs);
+    }
+
+    private static void SendInputWithRetry(Input[] inputs)
+    {
         int inputSize = Marshal.SizeOf<Input>();
-        uint sent = SendInput((uint)inputs.Length, inputs, inputSize);
-        if (sent != (uint)inputs.Length)
+        int lastError = 0;
+
+        for (int attempt = 1; attempt <= SendInputRetryAttempts; attempt++)
         {
-            throw new InvalidOperationException(
-                $"SendInput sent {sent} of {inputs.Length} events (Win32 error {Marshal.GetLastWin32Error()}).");
+            uint sent = SendInput((uint)inputs.Length, inputs, inputSize);
+            if (sent == (uint)inputs.Length)
+            {
+                return;
+            }
+
+            lastError = Marshal.GetLastWin32Error();
+            if (attempt < SendInputRetryAttempts)
+            {
+                Thread.Sleep(SendInputRetryDelayMilliseconds);
+            }
         }
+
+        throw new InvalidOperationException(
+            $"SendInput failed after {SendInputRetryAttempts} attempts (last Win32 error {lastError}).");
     }
 
     private static Input KeyDown(ushort vk) => new()

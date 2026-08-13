@@ -27,6 +27,7 @@ spec.md의 Key Entities를 구현 가능한 형태로 구체화한다. 모든 �
 | `RetryCount` | int | 진행 중인 전환 시도의 재시도 횟수 | 0..RetryLimit(3), 성공하거나 한도 도달 시 0으로 리셋 |
 | `ShowSecondsUnit` | bool | 표시 옵션 — 최소 보기 숫자 뒤에 "초"를 붙일지 | 시작 입력 폼에서 설정, 기본값 켜짐 (FR-031) |
 | `ShowCycleNumber` | bool | 표시 옵션 — 최소 보기 앞에 "[N번째] "를 붙일지 | 시작 입력 폼에서 설정, 기본값 켜짐 (FR-031) |
+| `IsPaused` | bool | 사용자가 일시정지를 요청했는지 여부 (FR-035) | 기본값 꺼짐. 켜져 있으면 남은 시간 카운트다운과 새 전환 시도가 모두 멈춘다(진행 중이던 검증·재시도 시퀀스는 예외) |
 
 `CurrentDesktopIndex`와 `PerDesktopSwitchCounts`의 키는 모두 **절대 데스크톱 번호**(`RangeStart`..`RangeEnd`)를 사용한다 — 범위가 3~7이면 "데스크톱 3"처럼 사용자가 입력한 번호 그대로 표시되어야 하므로, 내부적으로 1부터 다시 세는 상대 인덱스를 쓰지 않는다.
 
@@ -66,6 +67,8 @@ FR-017(검증), FR-018(재시도), FR-019(자가 보정)의 판단 로직은 이
 **테두리 자석 스냅**(FR-032): 드래그로 `Position`을 갱신할 때마다, 창의 현재 화면 대비 위치가 소속 화면(`Screen`)의 작업 영역 테두리(상/하/좌/우)에서 임계 거리(구현 재량, 작게 — "거의 닿을 수준") 이내이면 해당 축의 좌표를 테두리 값으로 고정(snap)한다. 임계 거리를 벗어나면 스냅 없이 커서를 그대로 따라간다.
 
 **상세 보기 닫기 버튼**(FR-029): `ViewMode = Detailed`일 때만 작은 커스텀 닫기(×) 컨트롤을 표시하며, 클릭 시 일반 닫기 시도와 동일한 `IsClosing` → 확인 다이얼로그 경로로 이어진다. 최소 보기에는 표시하지 않는다.
+
+**상세 보기 일시정지 버튼**(FR-035): `ViewMode = Detailed`일 때만 표시되며, 클릭하면 `RotationSession.IsPaused`를 토글한다. 세션은 앱 전체에 하나뿐이므로, 어느 데스크톱의 창에서 토글하든 다음 갱신 때 모든 창에 동일하게 반영된다. `TargetReached`이면 비활성화된다.
 
 **관계**: `RotationSession` 1 — N `PerDesktopFloatingWindow` (N = `DesktopCount`), 1 — N `PerDesktopSwitchCount` (N = `DesktopCount`). 각 `PerDesktopFloatingWindow`는 정확히 하나의 절대 데스크톱 번호에 대응하며, `RotationSession`의 파생 필드(남은 시간, 총 전환 횟수, 데스크톱별 카운트)를 동일하게 표시한다(창마다 내용은 같음, 위치와 `ViewMode`만 창별로 독립적).
 

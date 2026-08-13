@@ -314,3 +314,17 @@ Task: "src/DeskRotate/FloatingWindowForm.cs에 종료 확인 다이얼로그 구
 - [X] T057 `src/DeskRotate/RotationEngine.cs`를 재설계: `SeekToActualFirstDesktop()`(판정 기반)을 `SeekToActualFirstDesktopBlindly()`로 교체 — `Ctrl+Win+Left`가 이미 첫 번째 데스크톱에서는 항상 안전한 no-op이라는 Windows 표준 동작을 근거로, 판정 없이 충분히 넉넉한 횟수(40회)만큼 무조건 반복 시도한다 (FR-034, contradicts)
 - [X] T058 `src/DeskRotate/RotationEngine.cs`의 `PerformInitialSetup()`을 재설계 — 초기 탐색(FR-022)과 초기 설정(FR-020)을 하나의 순회로 통합해 실제 데스크톱 1번부터 `RangeEnd`까지 순서대로 방문하며, 이동 여부 판정은 1회용 참조 창 대신 직전에 방문해 이미 만들어 둔 `FloatingWindowForm`을 기준으로 한다. `RangeStart` 이전(순회 대상 아님)에 임시로 만든 창은 `RangeStart` 도달 시 정리한다. `CreateDesktopProbe()`와 관련 1회용 참조 창 인프라를 모두 제거해 코드를 단순화 (FR-033, contradicts)
 - [X] T059 실제 Windows 11 머신에서 진단용 파일 로그(임시)를 붙여 이동 판정 결과를 직접 관찰 — 1회용 참조 창이 실제 이동에도 불구하고 계속 "이동 안 함"으로, 또는 실제로는 멈춰 있는데 계속 "이동함"으로 나오는 등 일관성 없이 신뢰할 수 없음을 확인. 재설계 이후에는 데스크톱 18개를 실제로 만들어 둔 뒤 데스크톱 4번에서 범위 2~3(뒤로 여러 번 이동 필요)으로, 그리고 데스크톱 1번에서 범위 2~3(단순 경우)으로 각각 재현해 두 경우 모두 정확히 2·3번 창 2개만 생성되고 더 이상 점프하지 않음을 확인. 진단용 로그는 확인 후 제거함.
+
+---
+
+## Phase 17: 라벨 잘림 수정, 사이클 기본값 변경, 일시정지 기능, FR-033 키 입력 재전송 강화
+
+**Purpose**: 사용자가 한 번에 요청한 6가지(시작 창·플로팅 창 텍스트 잘림, 사이클 기본값 3→4, 일시정지 기능, 데스크톱 추가 생성 버그 재발, 시작 지연 설명, 데스크톱 이름 조회 가능 여부) 처리. spec.md FR-035(신설)·FR-013/FR-026 관련 Assumptions(개정)·FR-033(구현 강화) 대응. ⑤·⑥은 코드 변경 없이 스펙 Clarifications에 설명만 기록.
+
+- [X] T060 [P] `src/DeskRotate/StartupInputForm.cs`의 라벨/체크박스 Height를 실측(`TextRenderer.MeasureText`, 맑은 고딕 9pt 기준 필요 높이 25px) 기반으로 20/18px에서 26/28px로 늘리고 세로 배치를 재조정 — 텍스트 아래쪽이 잘리던 결함 수정 (spec.md Clarifications 2026-08-12 ①)
+- [X] T061 [P] `src/DeskRotate/FloatingWindowForm.cs`의 상세 보기 라벨 Height/Width를 실측 기반으로 늘리고(`DetailedSize` 240×260 → 280×312), 종료까지 남은 시간 등 초 단위 숫자가 커질 때 오른쪽이 잘리던 폭 부족도 함께 해결 (spec.md Clarifications 2026-08-12 ①)
+- [X] T062 [P] `src/DeskRotate/StartupInputForm.cs`의 `_targetCycleCountInput` 기본값을 3에서 4로 변경 (FR-013, FR-026/Assumptions 개정)
+- [X] T063 일시정지 기능 구현 (FR-035 신설): `RotationSession.cs`에 `IsPaused`/`TogglePause()` 추가하고 `Tick()`이 일시정지 중 카운트다운을 멈추도록 수정, `RotationEngine.cs`의 `OnTickAsync()`에 `IsPaused` 가드를 추가하고 `HandlePauseToggleRequested()`로 세션 하나를 통해 모든 창에 동일하게 반영, `FloatingWindowForm.cs` 상세 보기에 일시정지/재개 버튼을 추가(목표 도달 시 비활성화)하고 최소/상세 보기 모두 일시정지 상태를 표시
+- [X] T064 FR-033 이동 판정 재강화(간헐적 재발 대응): 실사용 환경에서 `SendInput` 자체가(다른 프로세스의 순간적 입력 가로채기 등으로) 실패해 아무 반영 없이 조용히 무시되는 사례를 직접 재현·확인(Win32 오류로 실패 반환) — 이 경우 기존의 "한 번 보내고 여러 번 확인" 방식은 애초에 이동이 시작된 적이 없어 아무리 기다려도 소용없었다. `RotationEngine.cs`의 `EnsureAdvancedToNextDesktop()`을 확인 실패마다(최대 3회) 키 입력 자체를 다시 보내도록 재작성하고, `WaitForMovementAway()` 폴링 제한 시간을 2초→3초로, `GuaranteedSeekToFirstAttempts`를 40→60으로 늘리고, 새로 만든 플로팅 창을 다음 판정 기준으로 쓰기 전 안정화 대기(400ms)를 추가. `KeyboardSimulator.cs`의 `SendInput` 호출도 즉시 예외를 던지는 대신 짧게(최대 3회, 150ms 간격) 재시도하도록 변경해, 순간적인 입력 실패로 앱 전체가 죽지 않도록 함 (FR-033, contradicts — 근본 원인이 감지 로직이 아니라 키 입력 자체의 유실일 수 있다는 새 증거 기반)
+- [X] T065 [P] `tests/DeskRotate.Tests/RotationSessionTests.cs`에 `IsPaused`/`TogglePause()` 테스트 4건 추가(기본값, 토글, 일시정지 중 카운트다운 정지, 재개 후 재개) — 39개 전체 테스트 통과
+- [X] T066 실제 Windows 11 머신에서 검증: 시작 창을 띄우고 `EnumChildWindows`+`GetWindowRect`로 실제 렌더링된 각 컨트롤의 좌표·크기를 직접 조회해 겹침·창 밖 이탈이 없음과 사이클 기본값 "4"가 실제로 반영됨을 확인. 다만 이 세션 동안 원격 데스크톱 화면이 잠겨 있어(사용자가 자리를 비움) `SendInput` 자체가 `ERROR_ACCESS_DENIED`로 실패하는 것을 이벤트 로그로 직접 확인했고, 이 때문에 실제 가상 데스크톱 전환이 필요한 시나리오(일시정지 버튼의 실제 클릭 동작, FR-033 강화가 간헐적 재발을 실제로 막는지)는 이번 세션에서 엔드투엔드로 라이브 검증하지 못했다 — 사용자가 화면 잠금을 해제한 뒤 직접 재확인이 필요함(최종 보고에 명시).

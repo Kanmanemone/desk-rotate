@@ -44,6 +44,13 @@ public sealed class RotationSession
     /// <summary>목표 총 전환 횟수에 도달했는지 여부 (FR-015).</summary>
     public bool TargetReached => CompletedSwitchCount >= TargetSwitchCount;
 
+    /// <summary>
+    /// 사용자가 일시정지를 요청했는지 여부 (FR-035). 일시정지 중에는 <see cref="Tick"/>이 카운트다운을
+    /// 진행하지 않고, RotationEngine도 새 전환 시도를 시작하지 않는다 — 이미 진행 중이던 전환
+    /// 시퀀스(검증·재시도)는 끝까지 마치고, 그다음 틱부터 새로 시작하지 않는 방식으로 멈춘다.
+    /// </summary>
+    public bool IsPaused { get; private set; }
+
     /// <summary>다음 자동 전환까지 남은 시간(초). 목표 도달 시 의미 없음.</summary>
     public int RemainingSecondsToNextSwitch { get; private set; }
 
@@ -117,10 +124,16 @@ public sealed class RotationSession
         return CurrentDesktopIndex >= RangeEnd ? RangeStart : CurrentDesktopIndex + 1;
     }
 
-    /// <summary>매초 호출되어 남은 시간 카운트다운을 진행한다 (목표 도달 후에는 더 감소하지 않음).</summary>
+    /// <summary>일시정지 ↔ 재개를 토글한다 (FR-035).</summary>
+    public void TogglePause()
+    {
+        IsPaused = !IsPaused;
+    }
+
+    /// <summary>매초 호출되어 남은 시간 카운트다운을 진행한다 (목표 도달 또는 일시정지 중에는 더 감소하지 않음).</summary>
     public void Tick()
     {
-        if (TargetReached)
+        if (TargetReached || IsPaused)
         {
             return;
         }

@@ -20,7 +20,25 @@ public sealed class RotationEngine
     /// 실제 있을 법한 데스크톱 개수보다 넉넉한 횟수만큼 무조건 이동을 시도하는 쪽이 더 신뢰할 수
     /// 있다 — 이미 1번에 도달한 뒤의 나머지 시도는 그냥 아무 일도 일어나지 않는다.
     /// </summary>
-    private const int GuaranteedSeekToFirstAttempts = 40;
+    private const int GuaranteedSeekToFirstAttempts = 60;
+
+    /// <summary>
+    /// 새로 만든 플로팅 창을 바로 다음 단계의 이동 판정 기준(참조 창)으로 쓰기 전에 주는 안정화
+    /// 시간(ms) — 창을 막 Show()한 직후에는 셸의 가상 데스크톱 추적에 아직 완전히 반영되지 않았을
+    /// 가능성을 배제할 수 없다(간헐적으로 재발한 오탐성 데스크톱 추가 생성 버그의 유력한 원인 중
+    /// 하나로 보고 추가한 방어 지연). 매 데스크톱 방문마다 한 번씩만 드는 비용이라 전체 초기 설정
+    /// 시간에 미치는 영향은 크지 않다.
+    /// </summary>
+    private const int NewMarkerSettleMilliseconds = 400;
+
+    /// <summary>
+    /// <see cref="EnsureAdvancedToNextDesktop"/>에서 "다음으로" 키 입력을 다시 보내며 이동 여부를
+    /// 재확인하는 최대 횟수. 실사용 중 SendInput 자체가(다른 프로세스의 순간적인 입력 가로채기 등
+    /// 이유로) 아예 씹혀 전혀 반영되지 않는 사례가 실제로 확인됐다 — 그 경우 같은 키 입력의 효과를
+    /// 아무리 오래 기다려도 이동은 감지되지 않는다(애초에 입력 자체가 전달되지 않았으므로). 그래서
+    /// "한 번 보내고 여러 번 확인"이 아니라, 확인이 실패할 때마다 키 입력 자체를 다시 보낸다.
+    /// </summary>
+    private const int EnsureAdvancedRetryAttempts = 3;
 
     private readonly RotationSession _session;
     private readonly VirtualDesktopInterop _interop;
@@ -110,26 +128,33 @@ public sealed class RotationEngine
     /// </summary>
     private void EnsureAdvancedToNextDesktop(FloatingWindowForm referenceOnCurrentDesktop)
     {
-        _keyboard.SendSwitchKeystroke(SwitchDirection.Next);
-
-        // 첫 번째 폴링 구간(최대 2초) 동안 이동이 감지되지 않아도 곧바로 "그 데스크톱이 없다"고
-        // 단정하지 않고, 새 키 입력 없이 한 번 더 폴링해 재확인한다(추가 키 입력이 없으므로 실제로
-        // 이동한 상태에서 다시 확인해도 더 지나쳐버릴 위험이 없다). 둘 다 이동 없음으로 나와야만
-        // 최종적으로 없다고 판단한다.
         IntPtr referenceHandle = referenceOnCurrentDesktop.Handle;
-        if (!WaitForMovementAway(referenceHandle) && !WaitForMovementAway(referenceHandle))
+
+        // "다음으로" 키를 한 번만 보내고 그 결과를 여러 번 폴링하는 방식은, 만약 그 한 번의 키
+        // 입력 자체가(다른 프로세스가 순간적으로 입력을 가로채는 등 이유로) 전혀 반영되지 않았을
+        // 경우 아무리 오래 기다려도 소용이 없다 — 애초에 이동이 시작된 적이 없기 때문이다. 그래서
+        // 확인에 실패할 때마다 키 입력 자체를 다시 보낸다. 이동이 확인되는 즉시 반환하므로, 이미
+        // 존재하는 데스크톱으로 정상 전환된 경우 추가 키 입력을 보낼 일은 없다(EnsureAdvancedRetry
+        // Attempts번 모두 실패해야만 아래에서 새로 생성한다).
+        for (int attempt = 1; attempt <= EnsureAdvancedRetryAttempts; attempt++)
         {
-            // 넉넉히 두 번 확인해도 참조 창이 계속 현재 데스크톱에 있다 — 전환이 일어나지 않았으므로
-            // 그 순번의 데스크톱이 아직 없다는 뜻이다. 새로 만들며 그쪽으로 전환한다.
-            //
-            // 주의: Win+Ctrl+D는 지금 위치가 어디든 항상 전체 데스크톱 목록의 "맨 끝"에 새
-            // 데스크톱을 추가한다 — "바로 다음 자리"에 끼워 넣지 않는다. 그래서 이동 여부 판정을
-            // 오판하면(예: 실제로는 이동했는데 아직 안 했다고 잘못 판단) 옆 데스크톱이 아니라 이미
-            // 존재하던 다른 데스크톱들 끝(예: 19번)까지 엉뚱하게 새로 만들며 튀어버리는 결함으로
-            // 이어진다 — 오판 하나가 곧바로 큰 점프가 되므로 이동 감지 자체를 신뢰할 수 있어야 한다.
-            _keyboard.SendCreateDesktopKeystroke();
-            PumpMessagesFor(InterKeystrokeDelayMilliseconds);
+            _keyboard.SendSwitchKeystroke(SwitchDirection.Next);
+            if (WaitForMovementAway(referenceHandle))
+            {
+                return;
+            }
         }
+
+        // 키 입력을 다시 보내며 여러 차례 재확인해도 참조 창이 계속 현재 데스크톱에 있다 — 전환이
+        // 일어나지 않았으므로 그 순번의 데스크톱이 아직 없다는 뜻이다. 새로 만들며 그쪽으로 전환한다.
+        //
+        // 주의: Win+Ctrl+D는 지금 위치가 어디든 항상 전체 데스크톱 목록의 "맨 끝"에 새 데스크톱을
+        // 추가한다 — "바로 다음 자리"에 끼워 넣지 않는다. 그래서 이동 여부 판정을 오판하면(예: 실제로는
+        // 이동했는데 아직 안 했다고 잘못 판단) 옆 데스크톱이 아니라 이미 존재하던 다른 데스크톱들 끝
+        // (예: 19번)까지 엉뚱하게 새로 만들며 튀어버리는 결함으로 이어진다 — 오판 하나가 곧바로 큰
+        // 점프가 되므로 이동 감지 자체를 신뢰할 수 있어야 한다.
+        _keyboard.SendCreateDesktopKeystroke();
+        PumpMessagesFor(InterKeystrokeDelayMilliseconds);
     }
 
     /// <summary>
@@ -138,7 +163,9 @@ public sealed class RotationEngine
     /// </summary>
     private bool WaitForMovementAway(IntPtr referenceHandle)
     {
-        const int timeoutMilliseconds = 2000;
+        // 2초에서 3초로 늘렸다 — 세 번 연속 확인(EnsureAdvancedToNextDesktop 참고)과 함께,
+        // 시스템 부하로 전환 애니메이션이 예상보다 오래 걸리는 경우를 더 잘 견디기 위함이다.
+        const int timeoutMilliseconds = 3000;
         const int pollIntervalMilliseconds = 100;
 
         int elapsed = 0;
@@ -186,9 +213,23 @@ public sealed class RotationEngine
     {
         var window = new FloatingWindowForm(desktopIndex);
         window.ExitConfirmed += HandleExitConfirmed;
+        window.PauseToggleRequested += HandlePauseToggleRequested;
         window.PlaceAtTopCenter();
         window.Show();
+        // 이 창이 바로 다음 데스크톱의 이동 판정 기준으로 쓰이기 전에 잠깐 안정화 시간을 준다
+        // (NewMarkerSettleMilliseconds 참고).
+        PumpMessagesFor(NewMarkerSettleMilliseconds);
         return window;
+    }
+
+    /// <summary>
+    /// 어느 플로팅 창의 상세 보기에서든 일시정지 버튼을 누르면 호출된다 (FR-035) — 세션은
+    /// 하나뿐이므로 즉시 모든 창에 반영해, 다른 데스크톱의 창을 봐도 같은 일시정지 상태로 보인다.
+    /// </summary>
+    private void HandlePauseToggleRequested()
+    {
+        _session.TogglePause();
+        RefreshAllWindows();
     }
 
     /// <summary>현재 데스크톱(호출 시점엔 항상 RangeEnd)에서 targetIndex까지 되돌아간다.</summary>
@@ -212,7 +253,8 @@ public sealed class RotationEngine
 
         // 전환 시퀀스가 이미 진행 중이면(재시도 등으로 300ms 이상 걸리는 중) 다시 겹쳐 시작하지
         // 않는다 — 매초 화면 갱신 자체는 위에서 이미 계속 이루어지므로 창이 멈춰 보이지 않는다.
-        if (_switchInProgress || _session.TargetReached || _session.RemainingSecondsToNextSwitch > 0)
+        // 일시정지 중에는(FR-035) 진행 중이던 시퀀스는 끝까지 마치되 새 시도는 시작하지 않는다.
+        if (_switchInProgress || _session.TargetReached || _session.IsPaused || _session.RemainingSecondsToNextSwitch > 0)
         {
             return;
         }

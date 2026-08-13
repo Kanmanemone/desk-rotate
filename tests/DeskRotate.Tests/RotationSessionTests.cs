@@ -267,4 +267,52 @@ public class RotationSessionTests
 
         Assert.Equal(15, session.RemainingSecondsToNextSwitch);
     }
+
+    // --- 일시정지/재개 (FR-035) ---
+
+    [Fact]
+    public void IsPaused_DefaultsToFalse()
+    {
+        var session = new RotationSession(rangeStart: 1, rangeEnd: 3, intervalSeconds: 10, targetCycleCount: 1);
+
+        Assert.False(session.IsPaused);
+    }
+
+    [Fact]
+    public void TogglePause_FlipsIsPaused()
+    {
+        var session = new RotationSession(rangeStart: 1, rangeEnd: 3, intervalSeconds: 10, targetCycleCount: 1);
+
+        session.TogglePause();
+        Assert.True(session.IsPaused);
+
+        session.TogglePause();
+        Assert.False(session.IsPaused);
+    }
+
+    [Fact]
+    public void Tick_DoesNotCountDownWhilePaused()
+    {
+        var session = new RotationSession(rangeStart: 1, rangeEnd: 2, intervalSeconds: 10, targetCycleCount: 1);
+
+        session.TogglePause();
+        session.Tick();
+        session.Tick();
+
+        Assert.Equal(10, session.RemainingSecondsToNextSwitch);
+        Assert.Equal(20, session.RemainingSecondsToFinish);
+    }
+
+    [Fact]
+    public void Tick_ResumesCountingDownAfterUnpausing()
+    {
+        var session = new RotationSession(rangeStart: 1, rangeEnd: 2, intervalSeconds: 10, targetCycleCount: 1);
+
+        session.TogglePause();
+        session.Tick();
+        session.TogglePause();
+        session.Tick();
+
+        Assert.Equal(9, session.RemainingSecondsToNextSwitch);
+    }
 }
