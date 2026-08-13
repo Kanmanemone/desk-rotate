@@ -22,3 +22,9 @@ packages/
 Thumbs.db
 *.tmp
 *.swp
+
+# 개인 바탕화면/작업 폴더에 만든 바로가기 — 절대경로가 박혀 있어 저장소에 들어가면 안 됨
+*.lnk
+
+# DeskRotate.bat이 .NET SDK가 없을 때 로컬로 내려받아 설치하는 폴더
+/.dotnet/

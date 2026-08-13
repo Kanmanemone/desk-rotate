@@ -18,14 +18,15 @@
 - Windows 10 (버전 1903/빌드 18362 이상) 또는 Windows 11
 - .NET 8 SDK (빌드 시) / .NET 8 데스크톱 런타임 (실행만 할 경우)
 
-## 빌드 및 실행
+## 실행 방법
 
-```powershell
-dotnet build
-dotnet run --project src/DeskRotate
-```
+1. 저장소를 zip으로 내려받아 압축을 푼다.
+2. `DeskRotate.bat`을 더블클릭한다.
+   - .NET 8 SDK가 없으면 설치할지 물어본다. 동의하면 관리자 권한 없이 이 폴더 안에만 설치된다(시스템 전역 설치 아님).
+   - 이어 프로그램이 자동으로 빌드되고 **저장소 루트에 `DeskRotate.lnk` 바로가기가 새로 만들어진 뒤**, 앱이 실행된다.
+3. 다음부터는 `DeskRotate.bat` 말고 방금 만들어진 **`DeskRotate.lnk`를 더블클릭**하면 바로 실행된다.
 
-또는 `dotnet build` 후 생성된 `src/DeskRotate/bin/Debug/net8.0-windows10.0.19041.0/DeskRotate.exe`를 직접 더블클릭해 실행할 수 있다.
+`.lnk`는 만든 컴퓨터의 절대경로를 저장하는 파일이라 저장소에 미리 넣어 둘 수 없다 — 그래서 완성된 `.lnk`를 커밋해 두는 대신, `DeskRotate.bat`이 실행될 때마다 그 컴퓨터 기준으로 새로 만든다.
 
 ## 사용법
 
@@ -56,12 +57,6 @@ tests/DeskRotate.Tests/          RotationSession·VerificationOutcome 순수 로
 ```
 
 OS와 직접 연동하는 부분(가상 데스크톱 조회, 키 입력 시뮬레이션, 실제 창 동작)은 자동화 테스트 대신 `specs/001-desk-rotate/quickstart.md`의 수동 시나리오로 검증한다.
-
-## 테스트
-
-```powershell
-dotnet test
-```
 
 ## 설계 문서
 
